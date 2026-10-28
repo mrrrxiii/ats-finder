@@ -1,0 +1,24 @@
+{
+  "id": "lever-job-1",
+  "text": "Java Backend Engineer",
+  "applyUrl": "https://jobs.lever.co/acme/lever-job-1/apply",
+  "hostedUrl": "https://jobs.lever.co/acme/lever-job-1",
+  "categories": {
+    "location": "Remote - Canada",
+    "allLocations": [
+      "Remote - Canada",
+      "Ottawa, Ontario"
+    ]
+  },
+  "country": "CA",
+  "workplaceType": "remote",
+  "descriptionPlain": "Build Java services for Canadian customers.",
+  "lists": [
+    {
+      "text": "What you will do",
+      "content": "<ul><li>Ship reliable APIs</li></ul>"
+    }
+  ],
+  "additionalPlain": "This role is open throughout Canada.",
+  "createdAt": 1793111400000
+}

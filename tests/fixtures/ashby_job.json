@@ -1,0 +1,26 @@
+{
+  "id": "ashby-job-1",
+  "title": "Staff Java Engineer",
+  "jobUrl": "https://jobs.ashbyhq.com/acme/ashby-job-1",
+  "applyUrl": "https://jobs.ashbyhq.com/acme/ashby-job-1/application",
+  "location": "Remote",
+  "address": {
+    "postalAddress": {
+      "addressCountry": "CA"
+    }
+  },
+  "secondaryLocations": [
+    {
+      "location": "Ottawa, Ontario",
+      "address": {
+        "postalAddress": {
+          "addressCountry": "Canada"
+        }
+      }
+    }
+  ],
+  "workplaceType": "Remote",
+  "descriptionHtml": "<p>Build distributed <strong>Java</strong> systems.</p>",
+  "publishedAt": "2026-10-27T14:30:00Z",
+  "isListed": true
+}

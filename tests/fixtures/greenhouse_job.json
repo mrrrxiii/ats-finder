@@ -1,0 +1,18 @@
+{
+  "id": 1001,
+  "internal_job_id": 501,
+  "title": "Senior Java Engineer",
+  "absolute_url": "https://boards.greenhouse.io/acme/jobs/1001",
+  "location": {
+    "name": "Ottawa, Ontario"
+  },
+  "offices": [
+    {
+      "name": "Ottawa HQ",
+      "location": "Ottawa, Ontario, Canada"
+    }
+  ],
+  "content": "<p>Build <strong>Java</strong> services &amp; APIs.</p>",
+  "first_published": "2026-10-27T10:30:00-04:00",
+  "company_name": "Acme Canada"
+}
