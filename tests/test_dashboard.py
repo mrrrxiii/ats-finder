@@ -80,7 +80,7 @@ def test_snapshot_discovery_dashboard_row_never_labels_first_seen_as_published(
             job_factory("baseline-job"),
             job_factory(
                 "snapshot-job",
-                title="Principal Java Runtime Engineer",
+                title="Senior Java Runtime Engineer",
                 description="Develop Java runtime diagnostics.",
             ),
         ],

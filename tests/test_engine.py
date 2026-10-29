@@ -7,7 +7,7 @@ import pytest
 
 from ats_finder.db import Database
 from ats_finder.engine import ScanEngine
-from ats_finder.filters import classify_location, matches_java
+from ats_finder.filters import classify_location, has_excluded_title, matches_java
 from ats_finder.models import (
     ApplicationStatus,
     DiscoveryType,
@@ -372,6 +372,128 @@ def test_verified_publication_older_than_24_hours_is_not_recent(
     assert harness.engine.recent_jobs(now=FIXED_NOW) == []
 
 
+def test_verified_job_older_than_60_days_is_never_persisted(
+    harness: EngineHarness,
+    job_factory: JobFactory,
+) -> None:
+    published_at = FIXED_NOW - timedelta(days=60, microseconds=1)
+    outcome = harness.engine.process_complete_scan(
+        harness.source.id,
+        [_verified_job(job_factory, "expired-job", published_at=published_at)],
+        completed_at=FIXED_NOW,
+    )
+
+    assert outcome.record_count == 1
+    assert outcome.baseline == ()
+    assert harness.database.list_jobs(source_id=harness.source.id) == []
+    assert harness.database.list_observations(scan_id=outcome.scan_id) == []
+
+
+def test_exact_60_day_boundary_and_unverified_dates_are_retained(
+    harness: EngineHarness,
+    job_factory: JobFactory,
+) -> None:
+    exact_boundary = _verified_job(
+        job_factory,
+        "boundary-job",
+        published_at=FIXED_NOW - timedelta(days=60),
+    )
+    unverified_old = job_factory(
+        "unverified-job",
+        published_at=FIXED_NOW - timedelta(days=365),
+        publication_source="Undocumented provider field",
+        publication_semantics=PublicationSemantics.UNKNOWN,
+        publication_is_verified=False,
+    )
+    outcome = harness.engine.process_complete_scan(
+        harness.source.id,
+        [exact_boundary, unverified_old, job_factory("undated-job")],
+        completed_at=FIXED_NOW,
+    )
+
+    assert outcome.record_count == 3
+    assert {job.provider_job_id for job in harness.database.list_jobs()} == {
+        "boundary-job",
+        "undated-job",
+        "unverified-job",
+    }
+
+
+def test_existing_job_and_history_are_hard_deleted_when_the_job_ages_out(
+    harness: EngineHarness,
+    job_factory: JobFactory,
+) -> None:
+    published_at = FIXED_NOW - timedelta(days=59)
+    harness.engine.process_complete_scan(
+        harness.source.id,
+        [_verified_job(job_factory, "aging-job", published_at=published_at)],
+        completed_at=FIXED_NOW,
+    )
+    existing = harness.database.get_job_by_external_id(harness.source.id, "aging-job")
+    assert existing is not None
+    harness.engine.set_application_status(existing.id, ApplicationStatus.APPLIED)
+
+    later = FIXED_NOW + timedelta(days=2)
+    outcome = harness.engine.process_complete_scan(
+        harness.source.id,
+        [job_factory("aging-job")],
+        completed_at=later,
+    )
+
+    assert outcome.record_count == 1
+    assert outcome.removed == ()
+    assert harness.database.get_job(existing.id) is None
+    with harness.database.read() as connection:
+        for table in (
+            "job_observations",
+            "job_versions",
+            "job_events",
+            "application_status_history",
+        ):
+            assert connection.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE job_id = ?", (existing.id,)
+            ).fetchone()[0] == 0
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_retention_purge_clears_repost_links_but_keeps_the_repost(
+    harness: EngineHarness,
+    job_factory: JobFactory,
+) -> None:
+    published_at = FIXED_NOW - timedelta(days=59)
+    harness.engine.process_complete_scan(
+        harness.source.id,
+        [_verified_job(job_factory, "original", published_at=published_at)],
+        completed_at=FIXED_NOW,
+    )
+    harness.engine.process_complete_scan(
+        harness.source.id,
+        [],
+        completed_at=FIXED_NOW + timedelta(hours=1),
+    )
+    harness.engine.process_complete_scan(
+        harness.source.id,
+        [job_factory("repost")],
+        completed_at=FIXED_NOW + timedelta(hours=2),
+    )
+    original = harness.database.get_job_by_external_id(harness.source.id, "original")
+    repost = harness.database.get_job_by_external_id(harness.source.id, "repost")
+    assert original is not None
+    assert repost is not None
+    assert repost.potential_repost_of_job_id == original.id
+
+    deleted = harness.engine.prune_expired_jobs(now=FIXED_NOW + timedelta(days=2))
+
+    assert deleted == 1
+    assert harness.database.get_job(original.id) is None
+    retained_repost = harness.database.get_job(repost.id)
+    assert retained_repost is not None
+    assert retained_repost.potential_repost_of_job_id is None
+    assert retained_repost.repost_similarity is None
+    with harness.database.read() as connection:
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
 def test_missing_publication_date_remains_an_unverified_baseline(
     harness: EngineHarness,
     job_factory: JobFactory,
@@ -404,6 +526,12 @@ def test_missing_original_date_can_qualify_by_new_snapshot_discovery(
             job_factory("job-1"),
             job_factory(
                 "job-2",
+                title="Senior Java Data Engineer",
+                description="Design Java data ingestion systems.",
+                location="Remote - Canada",
+            ),
+            job_factory(
+                "job-3",
                 title="Principal Java Data Engineer",
                 description="Design Java data ingestion systems.",
                 location="Remote - Canada",
@@ -413,7 +541,7 @@ def test_missing_original_date_can_qualify_by_new_snapshot_discovery(
     )
 
     recent = harness.engine.recent_jobs(now=detected_at)
-    assert [job.title for job in recent] == ["Principal Java Data Engineer"]
+    assert [job.title for job in recent] == ["Senior Java Data Engineer"]
     assert len(recent) == 1
     result = recent[0]
     assert result.discovery_type is DiscoveryType.NEWLY_DETECTED
@@ -442,6 +570,26 @@ def test_java_word_boundary_rejects_javascript_only(
     expected: bool,
 ) -> None:
     assert matches_java(title, description) is expected
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("Staff Java Engineer", True),
+        ("PRINCIPLE Java Engineer", True),
+        ("Principal Java Engineer", True),
+        ("Java Engineering Manager", True),
+        ("Chief-of-Staff, Java Platform", True),
+        ("Java Staffing Platform Engineer", False),
+        ("Java Management Platform Engineer", False),
+        ("Senior Java Engineer", False),
+    ],
+)
+def test_excluded_title_words_are_case_insensitive_whole_words(
+    title: str,
+    expected: bool,
+) -> None:
+    assert has_excluded_title(title) is expected
 
 
 @pytest.mark.parametrize(

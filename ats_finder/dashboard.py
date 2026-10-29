@@ -133,6 +133,7 @@ def latest_page(database: Database, settings: Settings) -> None:
     st.header("Latest Java Openings")
     st.caption(
         "Only confirmed Java roles in Ottawa or explicitly remote from Canada are shown. "
+        "Titles containing Staff, Principle, Principal, or Manager are excluded. "
         "Publication time and first-detection time are deliberately not conflated."
     )
     unified = st.toggle("Use unified evidence-time sort", value=False)

@@ -12,14 +12,16 @@ for provider-specific evidence and completeness rules.
 
 ## What counts as a recent result
 
-A job enters the main results only when all three conditions hold:
+A job enters the main results only when all four conditions hold:
 
 1. `Java` occurs as a standalone, case-insensitive word in the title or full
    description. `JavaScript`, JVM-only, and Spring-only text do not match.
-2. The role is in Ottawa, Kanata, or Stittsville, or the public posting or
+2. The title does not contain `Staff`, `Principle`, `Principal`, or `Manager`
+   as a standalone, case-insensitive word.
+3. The role is in Ottawa, Kanata, or Stittsville, or the public posting or
    structured ATS data explicitly establishes remote eligibility from Canada.
    Ambiguous remote roles become `REVIEW_LOCATION` and are excluded.
-3. One of these independent evidence paths qualifies:
+4. One of these independent evidence paths qualifies:
 
    - `VERIFIED_RECENT`: a documented ATS publication or republication timestamp
      is between `now - 24 hours` and `now` in UTC.
@@ -32,6 +34,11 @@ An initial scan establishes a `BASELINE`; it does not claim that undated jobs
 are new. An undated addition after a snapshot gap over 24 hours becomes
 `NEWLY_DETECTED_TIME_UNCERTAIN` and is excluded. Failed or incomplete scans do
 not replace the comparison baseline and cannot remove jobs.
+
+Jobs with a verified publication timestamp strictly older than 60 days are
+hard-deleted with their stored history and are not persisted by later scans.
+The exact 60-day boundary is retained. Undated jobs and timestamps without
+verified publication semantics remain available for snapshot comparison.
 
 `updated_at`, HTTP `Last-Modified`, search indexing time, and an ATS creation
 time are never substituted for publication time. An independently verified old

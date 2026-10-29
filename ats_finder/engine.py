@@ -12,7 +12,7 @@ import re
 import sqlite3
 
 from .db import Database, datetime_from_storage, datetime_to_storage
-from .filters import classify_location, matches_java, plain_text
+from .filters import classify_location, has_excluded_title, matches_java, plain_text
 from .models import (
     ATSSource,
     ApplicationStatus,
@@ -290,7 +290,7 @@ class ScanEngine:
         window: timedelta | None = None,
         unified_sort: bool = False,
     ) -> list[RecentJob]:
-        """Return confirmed Java plus Ottawa/Canada-remote jobs.
+        """Return confirmed Java/location matches after title exclusions.
 
         Verified publication and snapshot discovery remain visibly distinct.
         Potential reposts, uncertain locations, stale-snapshot discoveries, and
@@ -318,6 +318,8 @@ class ScanEngine:
 
         results: list[RecentJob] = []
         for row in rows:
+            if has_excluded_title(row["title"]):
+                continue
             published_at = datetime_from_storage(row["published_at"])
             discovery_at = datetime_from_storage(row["discovery_at"])
             assert discovery_at is not None
@@ -404,6 +406,14 @@ class ScanEngine:
             )
         return results
 
+    def prune_expired_jobs(self, *, now: datetime | None = None) -> int:
+        """Hard-delete jobs whose verified publication is older than retention."""
+
+        current = as_utc(now) if now is not None else utc_now()
+        cutoff = current - self.policy.verified_publication_retention
+        with self.database.transaction() as connection:
+            return self._hard_delete_expired_jobs(connection, cutoff=cutoff)
+
     def _record_unsuccessful_scan(
         self,
         source_id: int,
@@ -474,6 +484,7 @@ class ScanEngine:
         completed: datetime,
         next_scan_at: datetime | None,
     ) -> ScanOutcome:
+        raw_record_count = len(jobs)
         baseline_ids: list[str] = []
         added_ids: list[str] = []
         unchanged_ids: list[str] = []
@@ -484,6 +495,35 @@ class ScanEngine:
 
         with self.database.transaction() as connection:
             source = self._require_source(connection, source_id)
+            cutoff = completed - self.policy.verified_publication_retention
+            pre_retention_rows = connection.execute(
+                "SELECT * FROM jobs WHERE source_id = ? ORDER BY id",
+                (source_id,),
+            ).fetchall()
+            pre_retention_by_external_id = {
+                row["provider_job_id"]: row for row in pre_retention_rows
+            }
+            retained_jobs: list[NormalizedJob] = []
+            protected_job_ids: list[int] = []
+            expired_existing_ids: list[int] = []
+            for job in jobs:
+                existing = pre_retention_by_external_id.get(job.provider_job_id)
+                publication = self._resolve_publication_evidence(job, existing)
+                if self._publication_is_expired(publication, cutoff):
+                    if existing is not None:
+                        expired_existing_ids.append(int(existing["id"]))
+                    continue
+                retained_jobs.append(job)
+                if existing is not None:
+                    protected_job_ids.append(int(existing["id"]))
+
+            self._hard_delete_expired_jobs(
+                connection,
+                cutoff=cutoff,
+                protected_job_ids=protected_job_ids,
+                additional_job_ids=expired_existing_ids,
+            )
+            jobs = tuple(retained_jobs)
             previous = self._previous_complete_scan(connection, source_id)
             previous_id, previous_at, gap_seconds = self._comparison_details(previous, completed)
             cursor = connection.execute(
@@ -499,7 +539,7 @@ class ScanEngine:
                     source_id,
                     datetime_to_storage(started),
                     datetime_to_storage(completed),
-                    len(jobs),
+                    raw_record_count,
                     previous_id,
                     datetime_to_storage(previous_at),
                     gap_seconds,
@@ -764,7 +804,7 @@ class ScanEngine:
             previous_complete_scan_id=previous_id,
             previous_complete_scan_at=previous_at,
             snapshot_gap=None if gap_seconds is None else timedelta(seconds=gap_seconds),
-            record_count=len(jobs),
+            record_count=raw_record_count,
             baseline=tuple(baseline_ids),
             added=tuple(added_ids),
             unchanged=tuple(unchanged_ids),
@@ -773,6 +813,76 @@ class ScanEngine:
             reappeared=tuple(reappeared_ids),
             potential_reposts=tuple(potential_repost_ids),
         )
+
+    @staticmethod
+    def _publication_is_expired(
+        publication: dict[str, object | None],
+        cutoff: datetime,
+    ) -> bool:
+        if not bool(publication["publication_is_verified"]):
+            return False
+        published_at = publication["published_at"]
+        assert isinstance(published_at, datetime)
+        return published_at < cutoff
+
+    @staticmethod
+    def _hard_delete_expired_jobs(
+        connection: sqlite3.Connection,
+        *,
+        cutoff: datetime,
+        protected_job_ids: Iterable[int] = (),
+        additional_job_ids: Iterable[int] = (),
+    ) -> int:
+        """Stage retention targets, clear repost links, and cascade-delete them."""
+
+        connection.execute(
+            """
+            CREATE TEMP TABLE IF NOT EXISTS _ats_finder_retention_targets (
+                job_id INTEGER PRIMARY KEY
+            )
+            """
+        )
+        connection.execute("DELETE FROM _ats_finder_retention_targets")
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO _ats_finder_retention_targets(job_id)
+            SELECT id
+            FROM jobs
+            WHERE publication_is_verified = 1 AND published_at < ?
+            """,
+            (datetime_to_storage(cutoff),),
+        )
+        connection.executemany(
+            "DELETE FROM _ats_finder_retention_targets WHERE job_id = ?",
+            ((int(job_id),) for job_id in protected_job_ids),
+        )
+        connection.executemany(
+            "INSERT OR IGNORE INTO _ats_finder_retention_targets(job_id) VALUES (?)",
+            ((int(job_id),) for job_id in additional_job_ids),
+        )
+        row = connection.execute(
+            "SELECT COUNT(*) AS count FROM _ats_finder_retention_targets"
+        ).fetchone()
+        target_count = int(row["count"])
+        if target_count:
+            for table in ("jobs", "job_observations", "job_events"):
+                connection.execute(
+                    f"""
+                    UPDATE {table}
+                    SET potential_repost_of_job_id = NULL, repost_similarity = NULL
+                    WHERE potential_repost_of_job_id IN (
+                        SELECT job_id FROM _ats_finder_retention_targets
+                    )
+                    """
+                )
+            connection.execute(
+                """
+                DELETE FROM jobs
+                WHERE id IN (SELECT job_id FROM _ats_finder_retention_targets)
+                """
+            )
+        connection.execute("DELETE FROM _ats_finder_retention_targets")
+        return target_count
 
     @staticmethod
     def _require_source(connection: sqlite3.Connection, source_id: int) -> sqlite3.Row:

@@ -11,6 +11,10 @@ from .models import LocationDecision, LocationMatch, WorkplaceType
 _TAG_RE = re.compile(r"<[^>]+>")
 _SPACE_RE = re.compile(r"\s+")
 _JAVA_RE = re.compile(r"(?<!\w)java(?!\w)", re.IGNORECASE)
+_EXCLUDED_TITLE_RE = re.compile(
+    r"(?<!\w)(?:staff|principle|principal|manager)(?!\w)",
+    re.IGNORECASE,
+)
 
 _OTTAWA_RE = re.compile(r"\b(?:ottawa|kanata|stittsville)\b", re.IGNORECASE)
 _REMOTE_RE = re.compile(
@@ -78,6 +82,12 @@ def matches_java(title: str | None, description: str | None) -> bool:
     """
 
     return bool(_JAVA_RE.search(plain_text(title)) or _JAVA_RE.search(plain_text(description)))
+
+
+def has_excluded_title(title: str | None) -> bool:
+    """Return whether a title contains an excluded seniority/management word."""
+
+    return bool(_EXCLUDED_TITLE_RE.search(plain_text(title)))
 
 
 def infer_workplace_type(
