@@ -1,8 +1,11 @@
 # SQLite Schema
 
-Schema version: **2**. The executable schema, indexes, triggers, v1-to-v2
-backfill, and row mappings are in `ats_finder/db.py`. Timestamps are
-timezone-aware UTC ISO 8601 strings ending in `Z`.
+Schema version: **3**. The executable schema, indexes, triggers, v1-to-v2
+backfill, and row mappings are in `ats_finder/db.py`. Version 3 adds the
+`idx_jobs_repost_link`, `idx_observations_repost_link`, and
+`idx_job_events_repost_link` indexes so retention can clear repost links with
+indexed lookups instead of full table scans. Timestamps are timezone-aware UTC
+ISO 8601 strings ending in `Z`.
 
 SQLite runs with foreign keys enabled, a 30-second busy timeout by default, WAL
 mode for file databases, and immediate transactions for writes. A successful
@@ -99,5 +102,5 @@ idempotent initialization and audit-table backfill before advancing the version.
   negative.
 - Foreign keys cascade source/job deletion into their dependent audit records.
 - Scheduling, scan baseline lookup, current source state, recent evidence,
-  observation history, event history, versions, and application history have
-  dedicated indexes.
+  observation history, event history, versions, application history, and repost
+  links have dedicated indexes.

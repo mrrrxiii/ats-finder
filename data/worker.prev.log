@@ -1,0 +1,451 @@
+nohup: ignoring input
+2026-10-28 22:55:44,710 INFO ats_finder.monitor telemetry start sample 7599/36384 attempted, remaining 28785, eta unknown -> data/ats_finder.monitor.jsonl
+2026-10-28 22:55:45,390 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/blueskytelepsych/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:56:47,173 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bluestaq/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:56:48,586 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bluewaterthinking/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:56:48,617 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bluevineus/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:12,023 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bluestone/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:12,024 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bluevineindia/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:12,024 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bluestarfamilies/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:12,025 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bluevine/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:12,026 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bluestone-provider/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:27,409 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bluevineisrael/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:30,723 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/blurstudio/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:32,141 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/blytheco/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:32,142 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/blusharkdigital/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:34,663 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bmgmoney/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:34,690 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bnbchain/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:34,691 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bmnt/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:34,691 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/blumira/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:37,184 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bmf/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:37,185 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bme/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:37,185 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bmeasp/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:39,451 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boatwright/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:39,509 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bngteam/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:39,509 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bnevents/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:39,510 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bnbchainfoundation/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:39,510 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bobbie/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:41,846 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bob/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:43,031 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boingo/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:43,033 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bobtail/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:46,423 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bokksu/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:46,424 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boku/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:46,425 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boilerroom/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:46,425 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bobsledinc/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19382 provider=greenhouse status=SUCCESS records=1005 requests=1 elapsed=60.98s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19383 provider=greenhouse status=SUCCESS records=8 requests=1 elapsed=62.29s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19384 provider=greenhouse status=SUCCESS records=8 requests=1 elapsed=87.33s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19385 provider=greenhouse status=SUCCESS records=30 requests=1 elapsed=102.50s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19386 provider=greenhouse status=SUCCESS records=26 requests=1 elapsed=99.19s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19387 provider=greenhouse status=FAILED records=0 requests=0 elapsed=87.35s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19388 provider=greenhouse status=SUCCESS records=2 requests=1 elapsed=86.04s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19389 provider=greenhouse status=SUCCESS records=3 requests=1 elapsed=100.26s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19390 provider=greenhouse status=SUCCESS records=8 requests=1 elapsed=23.85s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19391 provider=greenhouse status=SUCCESS records=28 requests=1 elapsed=21.41s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19392 provider=greenhouse status=SUCCESS records=0 requests=1 elapsed=25.25s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19393 provider=greenhouse status=SUCCESS records=2 requests=1 elapsed=19.12s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19394 provider=greenhouse status=SUCCESS records=8 requests=1 elapsed=19.04s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19395 provider=greenhouse status=SUCCESS records=8 requests=1 elapsed=17.82s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19396 provider=greenhouse status=SUCCESS records=0 requests=1 elapsed=22.74s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19397 provider=greenhouse status=SUCCESS records=10 requests=1 elapsed=11.99s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19398 provider=greenhouse status=FAILED records=0 requests=0 elapsed=8.71s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19399 provider=greenhouse status=FAILED records=0 requests=0 elapsed=3.97s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19400 provider=greenhouse status=SUCCESS records=3 requests=1 elapsed=3.80s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19401 provider=greenhouse status=FAILED records=0 requests=0 elapsed=0.07s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19402 provider=greenhouse status=FAILED records=0 requests=0 elapsed=6.00s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19403 provider=greenhouse status=SUCCESS records=2 requests=1 elapsed=5.92s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19404 provider=greenhouse status=FAILED records=0 requests=0 elapsed=2.33s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19405 provider=greenhouse status=FAILED records=0 requests=0 elapsed=2.32s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19406 provider=greenhouse status=SUCCESS records=0 requests=1 elapsed=5.80s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19407 provider=greenhouse status=SUCCESS records=12 requests=1 elapsed=2.44s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19408 provider=greenhouse status=FAILED records=0 requests=0 elapsed=8.00s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19409 provider=greenhouse status=SUCCESS records=1 requests=1 elapsed=4.77s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19410 provider=greenhouse status=FAILED records=0 requests=0 elapsed=7.90s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19411 provider=greenhouse status=SUCCESS records=11 requests=1 elapsed=4.58s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19412 provider=greenhouse status=FAILED records=0 requests=0 elapsed=4.58s
+2026-10-28 22:57:47,409 INFO ats_finder.worker source=19413 provider=greenhouse status=SUCCESS records=10 requests=1 elapsed=5.56s
+2026-10-28 22:57:47,863 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bolcomen/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:48,835 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boldbusiness/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:48,879 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boldin/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:49,892 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bold/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:49,892 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boldmetrics/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:52,150 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bolingbrookvet/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:53,337 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bombas/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:53,338 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boloai/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:53,339 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bolster/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:54,241 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bondbrothersinc/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:54,245 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bombfell/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:54,249 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bombora/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:54,272 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bolt42/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:54,273 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boltv2/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:54,288 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bolt/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:54,484 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bondfinancialtechnologies/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:54,772 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bondlink/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:54,987 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bondora/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:55,449 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bondsmith/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:56,033 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bondvet/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:56,997 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bonfirestudios/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:56,998 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bonfirestudiosinc/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:57,561 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bonobos2/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:57,579 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bonzzu/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:57,580 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bonsai/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:57,580 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bonobos/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:57,581 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bonsbyhvacplumbing/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:57,581 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bonusly/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:58,772 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bookingcomanonymous/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:58,773 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/booker/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:58,774 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bookinggo/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:58,775 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/booleanlabsxyz/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19414 provider=greenhouse status=SUCCESS records=16 requests=1 elapsed=0.97s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19415 provider=greenhouse status=SUCCESS records=1 requests=1 elapsed=3.23s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19416 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.06s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19417 provider=greenhouse status=SUCCESS records=5 requests=1 elapsed=2.08s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19418 provider=greenhouse status=SUCCESS records=4 requests=1 elapsed=4.28s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19419 provider=greenhouse status=SUCCESS records=3 requests=1 elapsed=5.52s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19420 provider=greenhouse status=SUCCESS records=3 requests=1 elapsed=6.37s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19421 provider=greenhouse status=FAILED records=0 requests=0 elapsed=6.37s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19422 provider=greenhouse status=FAILED records=0 requests=0 elapsed=5.50s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19423 provider=greenhouse status=FAILED records=0 requests=0 elapsed=5.39s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19424 provider=greenhouse status=FAILED records=0 requests=0 elapsed=4.38s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19425 provider=greenhouse status=SUCCESS records=8 requests=1 elapsed=1.64s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19426 provider=greenhouse status=FAILED records=0 requests=0 elapsed=2.14s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19427 provider=greenhouse status=FAILED records=0 requests=0 elapsed=0.91s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19428 provider=greenhouse status=FAILED records=0 requests=0 elapsed=0.06s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19429 provider=greenhouse status=FAILED records=0 requests=0 elapsed=0.30s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19430 provider=greenhouse status=FAILED records=0 requests=0 elapsed=0.59s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19431 provider=greenhouse status=SUCCESS records=11 requests=1 elapsed=1.16s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19432 provider=greenhouse status=SUCCESS records=2 requests=1 elapsed=1.79s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19433 provider=greenhouse status=SUCCESS records=84 requests=1 elapsed=2.75s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19434 provider=greenhouse status=FAILED records=0 requests=0 elapsed=2.73s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19435 provider=greenhouse status=SUCCESS records=1 requests=1 elapsed=3.23s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19436 provider=greenhouse status=FAILED records=0 requests=0 elapsed=3.78s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19437 provider=greenhouse status=FAILED records=0 requests=0 elapsed=3.09s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19438 provider=greenhouse status=FAILED records=0 requests=0 elapsed=3.30s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19439 provider=greenhouse status=SUCCESS records=4 requests=1 elapsed=3.32s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19440 provider=greenhouse status=FAILED records=0 requests=0 elapsed=2.69s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19441 provider=greenhouse status=SUCCESS records=0 requests=1 elapsed=1.07s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19442 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.27s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19443 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.27s
+2026-10-28 22:57:58,776 INFO ats_finder.worker source=19444 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.20s
+2026-10-28 22:57:58,777 INFO ats_finder.worker source=19445 provider=greenhouse status=FAILED records=0 requests=0 elapsed=0.05s
+2026-10-28 22:57:59,275 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boomentertainment/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:57:59,842 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boomsupersonic/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:57:59,882 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boomilp/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:58:00,499 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boosted/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:00,544 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boostedai/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:58:00,545 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boostedcommerce/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:01,084 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boostinc/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:01,115 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boosterfuels/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:01,268 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boostinsurance/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:01,521 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boostlingo/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:58:02,054 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/borderless/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:02,075 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bootcampinstructionalengagement/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:02,270 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bornbred/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:02,522 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/borngroup/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:02,777 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bosapropertiesinc/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:58:03,213 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bosc/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:03,311 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bosonprotocol/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:03,519 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bostongenetics/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:03,770 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/botauto/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:58:04,343 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bottomlinetechnologies/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:58:04,344 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bouldercare/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:58:06,530 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bouldercrestfoundation/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:06,538 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boulevard/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:58:07,059 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boweryvaluation/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:07,076 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bovenizerandbakerorthodontics/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:58:07,670 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boutiqueair/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:07,671 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boundless/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:07,671 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bounceexchange/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:07,671 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boundlessimmigration/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:07,672 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boundlesslearning/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:58:07,672 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boundlessbio/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:58:08,831 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bowflex/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:08,833 INFO ats_finder.worker source=19446 provider=greenhouse status=SUCCESS records=0 requests=1 elapsed=0.57s
+2026-10-28 22:58:08,833 INFO ats_finder.worker source=19447 provider=greenhouse status=SUCCESS records=27 requests=1 elapsed=1.23s
+2026-10-28 22:58:08,833 INFO ats_finder.worker source=19448 provider=greenhouse status=FAILED records=0 requests=0 elapsed=0.66s
+2026-10-28 22:58:08,833 INFO ats_finder.worker source=19449 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.32s
+2026-10-28 22:58:08,833 INFO ats_finder.worker source=19450 provider=greenhouse status=SUCCESS records=0 requests=1 elapsed=1.81s
+2026-10-28 22:58:08,833 INFO ats_finder.worker source=19451 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.81s
+2026-10-28 22:58:08,833 INFO ats_finder.worker source=19452 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.90s
+2026-10-28 22:58:08,833 INFO ats_finder.worker source=19453 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.87s
+2026-10-28 22:58:08,833 INFO ats_finder.worker source=19454 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.48s
+2026-10-28 22:58:08,833 INFO ats_finder.worker source=19455 provider=greenhouse status=SUCCESS records=5 requests=1 elapsed=2.13s
+2026-10-28 22:58:08,833 INFO ats_finder.worker source=19456 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.63s
+2026-10-28 22:58:08,833 INFO ats_finder.worker source=19457 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.53s
+2026-10-28 22:58:08,833 INFO ats_finder.worker source=19458 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.24s
+2026-10-28 22:58:08,833 INFO ats_finder.worker source=19459 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.49s
+2026-10-28 22:58:08,833 INFO ats_finder.worker source=19460 provider=greenhouse status=SUCCESS records=4 requests=1 elapsed=2.08s
+2026-10-28 22:58:08,833 INFO ats_finder.worker source=19461 provider=greenhouse status=FAILED records=0 requests=0 elapsed=2.15s
+2026-10-28 22:58:08,833 INFO ats_finder.worker source=19462 provider=greenhouse status=FAILED records=0 requests=0 elapsed=2.04s
+2026-10-28 22:58:08,833 INFO ats_finder.worker source=19463 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.51s
+2026-10-28 22:58:08,833 INFO ats_finder.worker source=19464 provider=greenhouse status=SUCCESS records=25 requests=1 elapsed=2.19s
+2026-10-28 22:58:08,833 INFO ats_finder.worker source=19465 provider=greenhouse status=SUCCESS records=37 requests=1 elapsed=4.40s
+2026-10-28 22:58:08,833 INFO ats_finder.worker source=19466 provider=greenhouse status=SUCCESS records=0 requests=1 elapsed=2.53s
+2026-10-28 22:58:08,833 INFO ats_finder.worker source=19467 provider=greenhouse status=FAILED records=0 requests=0 elapsed=4.01s
+2026-10-28 22:58:08,834 INFO ats_finder.worker source=19468 provider=greenhouse status=SUCCESS records=12 requests=1 elapsed=3.85s
+2026-10-28 22:58:08,834 INFO ats_finder.worker source=19469 provider=greenhouse status=FAILED records=0 requests=0 elapsed=4.41s
+2026-10-28 22:58:08,834 INFO ats_finder.worker source=19470 provider=greenhouse status=FAILED records=0 requests=0 elapsed=4.36s
+2026-10-28 22:58:08,834 INFO ats_finder.worker source=19471 provider=greenhouse status=SUCCESS records=0 requests=1 elapsed=5.26s
+2026-10-28 22:58:08,834 INFO ats_finder.worker source=19472 provider=greenhouse status=FAILED records=0 requests=0 elapsed=3.40s
+2026-10-28 22:58:08,834 INFO ats_finder.worker source=19473 provider=greenhouse status=SUCCESS records=3 requests=1 elapsed=3.39s
+2026-10-28 22:58:08,834 INFO ats_finder.worker source=19474 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.20s
+2026-10-28 22:58:08,834 INFO ats_finder.worker source=19475 provider=greenhouse status=SUCCESS records=0 requests=1 elapsed=1.13s
+2026-10-28 22:58:08,834 INFO ats_finder.worker source=19476 provider=greenhouse status=FAILED records=0 requests=0 elapsed=0.06s
+2026-10-28 22:58:08,834 INFO ats_finder.worker source=19477 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.76s
+2026-10-28 22:58:09,253 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boxcast/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:58:09,807 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boxedwholesale/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:09,837 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boxinc/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:58:14,275 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boxycharm/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:14,277 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boxxe/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:58:14,864 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bracebridgecapital/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:58:15,378 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bpd/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:58:15,919 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bozzuto/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:58:15,920 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bradken/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:58:15,921 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/boysgirlsclubofcalgary/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:15,921 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bpcanada/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:58:15,922 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bpcs/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:58:15,923 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/braceai/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:58:18,784 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brady/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:58:18,790 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/braeburn/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:58:22,892 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/braincorporation/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:01,787 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brainlabs/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:02,915 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brainly/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:59:02,982 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brainstation/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:05,864 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/braineffectjobs/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:06,686 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/braintrust/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:59:06,704 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/braintrustcore/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:59:06,705 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/braingu/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:59:06,705 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brainrocketltd/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:07,394 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brainjolt/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:59:07,394 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/braintechnologies/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:59:07,448 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brainworxaudio/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:59:07,449 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/braintrusttutors/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:08,217 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/braintree/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:59:08,217 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brainpop/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:08,913 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/branch32/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:59:08,950 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/branch/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19478 provider=greenhouse status=SUCCESS records=0 requests=1 elapsed=0.56s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19479 provider=greenhouse status=FAILED records=0 requests=0 elapsed=0.62s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19480 provider=greenhouse status=SUCCESS records=120 requests=1 elapsed=4.04s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19481 provider=greenhouse status=SUCCESS records=7 requests=1 elapsed=4.63s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19482 provider=greenhouse status=FAILED records=0 requests=0 elapsed=4.11s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19483 provider=greenhouse status=FAILED records=0 requests=0 elapsed=5.76s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19484 provider=greenhouse status=SUCCESS records=137 requests=1 elapsed=52.14s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19485 provider=greenhouse status=SUCCESS records=2 requests=1 elapsed=6.31s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19486 provider=greenhouse status=SUCCESS records=21 requests=1 elapsed=8.05s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19487 provider=greenhouse status=SUCCESS records=8 requests=1 elapsed=5.12s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19488 provider=greenhouse status=FAILED records=0 requests=0 elapsed=2.27s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19489 provider=greenhouse status=SUCCESS records=5 requests=1 elapsed=1.10s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19490 provider=greenhouse status=SUCCESS records=44 requests=1 elapsed=2.95s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19491 provider=greenhouse status=SUCCESS records=44 requests=1 elapsed=7.06s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19492 provider=greenhouse status=SUCCESS records=5 requests=1 elapsed=6.97s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19493 provider=greenhouse status=SUCCESS records=10 requests=1 elapsed=5.65s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19494 provider=greenhouse status=SUCCESS records=8 requests=1 elapsed=49.41s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19495 provider=greenhouse status=FAILED records=0 requests=0 elapsed=49.48s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19496 provider=greenhouse status=FAILED records=0 requests=0 elapsed=50.17s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19497 provider=greenhouse status=SUCCESS records=18 requests=1 elapsed=44.65s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19498 provider=greenhouse status=FAILED records=0 requests=0 elapsed=41.01s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19499 provider=greenhouse status=SUCCESS records=3 requests=1 elapsed=46.50s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19500 provider=greenhouse status=SUCCESS records=1 requests=1 elapsed=5.61s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19501 provider=greenhouse status=SUCCESS records=13 requests=1 elapsed=4.07s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19502 provider=greenhouse status=FAILED records=0 requests=0 elapsed=4.48s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19503 provider=greenhouse status=FAILED records=0 requests=0 elapsed=5.30s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19504 provider=greenhouse status=FAILED records=0 requests=0 elapsed=0.84s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19505 provider=greenhouse status=FAILED records=0 requests=0 elapsed=0.07s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19506 provider=greenhouse status=SUCCESS records=3 requests=1 elapsed=1.51s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19507 provider=greenhouse status=FAILED records=0 requests=0 elapsed=0.06s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19508 provider=greenhouse status=SUCCESS records=2 requests=1 elapsed=2.15s
+2026-10-28 22:59:09,543 INFO ats_finder.worker source=19509 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.56s
+2026-10-28 22:59:09,962 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/branchmetrics/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:10,578 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/branded/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:59:10,596 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brandermillanimalhospital/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:11,160 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brandless/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:59:11,161 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brandfolder/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:11,571 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brandlive/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:59:11,622 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brandnewschool/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:12,145 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brands4friends/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:12,554 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brandonjbroderick/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:13,357 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bravado/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:59:13,422 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/braskem/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:13,423 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brandwatch/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:14,420 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brave/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:14,885 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/BraveheartBio/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:14,886 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brandyourself58/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:59:14,888 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brandtechplus/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:14,889 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bravehealth/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:59:16,657 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brazil/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:59:16,657 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/breakthroughenergy/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:17,886 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/breakthroughenergy38/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:59:17,888 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bravo/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:17,889 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/braze/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:17,889 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brazen/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:59:17,890 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bravely/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:59:18,669 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/breathelife/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:59:18,673 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/breakwatercorp/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 22:59:19,425 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/breather/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:59:19,426 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/breezeairways/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 22:59:19,426 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/breezecash/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:02:37,313 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/breezeway/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:02:37,314 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brennan/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:02:37,314 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brevium/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:02:37,404 INFO ats_finder.worker source=19510 provider=greenhouse status=SUCCESS records=15 requests=1 elapsed=0.62s
+2026-10-28 23:02:37,404 INFO ats_finder.worker source=19511 provider=greenhouse status=FAILED records=0 requests=0 elapsed=0.69s
+2026-10-28 23:02:37,404 INFO ats_finder.worker source=19512 provider=greenhouse status=SUCCESS records=3 requests=1 elapsed=1.20s
+2026-10-28 23:02:37,404 INFO ats_finder.worker source=19513 provider=greenhouse status=SUCCESS records=2 requests=1 elapsed=1.67s
+2026-10-28 23:02:37,404 INFO ats_finder.worker source=19514 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.27s
+2026-10-28 23:02:37,404 INFO ats_finder.worker source=19515 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.67s
+2026-10-28 23:02:37,404 INFO ats_finder.worker source=19516 provider=greenhouse status=SUCCESS records=9 requests=1 elapsed=2.18s
+2026-10-28 23:02:37,404 INFO ats_finder.worker source=19517 provider=greenhouse status=SUCCESS records=13 requests=1 elapsed=3.40s
+2026-10-28 23:02:37,404 INFO ats_finder.worker source=19518 provider=greenhouse status=SUCCESS records=0 requests=1 elapsed=2.03s
+2026-10-28 23:02:37,404 INFO ats_finder.worker source=19519 provider=greenhouse status=SUCCESS records=14 requests=1 elapsed=6.01s
+2026-10-28 23:02:37,404 INFO ats_finder.worker source=19520 provider=greenhouse status=SUCCESS records=19 requests=1 elapsed=3.27s
+2026-10-28 23:02:37,404 INFO ats_finder.worker source=19521 provider=greenhouse status=FAILED records=0 requests=0 elapsed=3.81s
+2026-10-28 23:02:37,404 INFO ats_finder.worker source=19522 provider=greenhouse status=SUCCESS records=14 requests=1 elapsed=2.31s
+2026-10-28 23:02:37,404 INFO ats_finder.worker source=19523 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.85s
+2026-10-28 23:02:37,404 INFO ats_finder.worker source=19524 provider=greenhouse status=SUCCESS records=10 requests=1 elapsed=2.80s
+2026-10-28 23:02:37,404 INFO ats_finder.worker source=19525 provider=greenhouse status=FAILED records=0 requests=0 elapsed=2.82s
+2026-10-28 23:02:37,405 INFO ats_finder.worker source=19526 provider=greenhouse status=SUCCESS records=7 requests=1 elapsed=2.07s
+2026-10-28 23:02:37,405 INFO ats_finder.worker source=19527 provider=greenhouse status=FAILED records=0 requests=0 elapsed=5.20s
+2026-10-28 23:02:37,405 INFO ats_finder.worker source=19528 provider=greenhouse status=SUCCESS records=8 requests=1 elapsed=4.73s
+2026-10-28 23:02:37,405 INFO ats_finder.worker source=19529 provider=greenhouse status=SUCCESS records=339 requests=1 elapsed=199.53s
+2026-10-28 23:02:37,405 INFO ats_finder.worker source=19530 provider=greenhouse status=FAILED records=0 requests=0 elapsed=3.73s
+2026-10-28 23:02:37,405 INFO ats_finder.worker source=19531 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.31s
+2026-10-28 23:02:37,405 INFO ats_finder.worker source=19532 provider=greenhouse status=SUCCESS records=1 requests=1 elapsed=2.51s
+2026-10-28 23:02:37,405 INFO ats_finder.worker source=19533 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.29s
+2026-10-28 23:02:37,405 INFO ats_finder.worker source=19534 provider=greenhouse status=SUCCESS records=1 requests=1 elapsed=2.82s
+2026-10-28 23:02:37,405 INFO ats_finder.worker source=19535 provider=greenhouse status=FAILED records=0 requests=0 elapsed=0.78s
+2026-10-28 23:02:37,405 INFO ats_finder.worker source=19536 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.54s
+2026-10-28 23:02:37,405 INFO ats_finder.worker source=19537 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.54s
+2026-10-28 23:02:37,405 INFO ats_finder.worker source=19538 provider=greenhouse status=SUCCESS records=18 requests=1 elapsed=1.97s
+2026-10-28 23:02:37,405 INFO ats_finder.worker source=19539 provider=greenhouse status=SUCCESS records=5 requests=1 elapsed=195.38s
+2026-10-28 23:02:37,405 INFO ats_finder.worker source=19540 provider=greenhouse status=SUCCESS records=12 requests=1 elapsed=195.37s
+2026-10-28 23:02:37,405 INFO ats_finder.worker source=19541 provider=greenhouse status=SUCCESS records=2 requests=1 elapsed=195.32s
+2026-10-28 23:02:37,849 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brewdog/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:02:38,101 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brewdogbars/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:02:38,379 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brex/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:11,428 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bridgeugsandbox/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:03:11,429 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bridgengsandbox/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:03:11,448 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bridgefinancialtechnology/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:03:11,448 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bridgeapi/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:03:11,449 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bridgekesandbox/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:03:11,449 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brickworksoftware/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:03:11,450 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bridgewater89/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:11,517 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bridgebio/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:12,611 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bridgewatercampusjobs/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:12,666 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/briefly/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:12,667 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bridgewatercampusrecruiting/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:12,682 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bridgeway/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:12,683 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brigadehealth/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:13,186 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bright/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:03:13,223 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brightai/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:13,342 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brightai1/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:13,595 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brightbeginnings/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:13,846 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brightcoreenergy/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:14,097 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brightcove/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:03:14,337 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brightfield/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:14,599 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brightflag/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:03:14,839 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brightflowai/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:03:15,107 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brighthavencommunities/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:42,498 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brightidea/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:42,502 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brighthire/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:42,503 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brighthealthgroup/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:03:42,512 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brightideainc/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:42,512 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brightit/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:42,548 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brightinsight/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19542 provider=greenhouse status=FAILED records=0 requests=0 elapsed=0.05s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19543 provider=greenhouse status=FAILED records=0 requests=0 elapsed=0.30s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19544 provider=greenhouse status=SUCCESS records=262 requests=1 elapsed=32.90s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19545 provider=greenhouse status=FAILED records=0 requests=0 elapsed=33.06s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19546 provider=greenhouse status=FAILED records=0 requests=0 elapsed=33.06s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19547 provider=greenhouse status=SUCCESS records=88 requests=1 elapsed=34.22s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19548 provider=greenhouse status=FAILED records=0 requests=0 elapsed=33.06s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19549 provider=greenhouse status=FAILED records=0 requests=0 elapsed=33.06s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19550 provider=greenhouse status=FAILED records=0 requests=0 elapsed=33.01s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19551 provider=greenhouse status=FAILED records=0 requests=0 elapsed=32.75s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19552 provider=greenhouse status=SUCCESS records=19 requests=1 elapsed=0.23s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19553 provider=greenhouse status=SUCCESS records=0 requests=1 elapsed=1.17s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19554 provider=greenhouse status=SUCCESS records=5 requests=1 elapsed=1.23s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19555 provider=greenhouse status=SUCCESS records=9 requests=1 elapsed=1.45s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19556 provider=greenhouse status=SUCCESS records=3 requests=1 elapsed=1.22s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19557 provider=greenhouse status=SUCCESS records=10 requests=1 elapsed=1.69s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19558 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.77s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19559 provider=greenhouse status=SUCCESS records=6 requests=1 elapsed=1.71s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19560 provider=greenhouse status=SUCCESS records=0 requests=1 elapsed=0.73s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19561 provider=greenhouse status=SUCCESS records=2 requests=1 elapsed=0.99s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19562 provider=greenhouse status=SUCCESS records=6 requests=1 elapsed=1.20s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19563 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.42s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19564 provider=greenhouse status=SUCCESS records=3 requests=1 elapsed=1.21s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19565 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.46s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19566 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.62s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19567 provider=greenhouse status=SUCCESS records=56 requests=1 elapsed=28.63s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19568 provider=greenhouse status=FAILED records=0 requests=0 elapsed=28.64s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19569 provider=greenhouse status=SUCCESS records=5 requests=1 elapsed=28.39s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19570 provider=greenhouse status=SUCCESS records=0 requests=1 elapsed=28.12s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19571 provider=greenhouse status=SUCCESS records=4 requests=1 elapsed=27.90s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19572 provider=greenhouse status=FAILED records=0 requests=0 elapsed=27.68s
+2026-10-28 23:03:42,549 INFO ats_finder.worker source=19573 provider=greenhouse status=SUCCESS records=0 requests=1 elapsed=27.40s
+2026-10-28 23:03:42,984 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brightmode/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:43,225 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brightmoney/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:03:43,474 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brightnetwork/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:43,722 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brightroll/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:03:43,974 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brightsign/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:44,229 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brightstonetherapy/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:44,471 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brilar/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:03:44,726 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brileysecurities/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:44,977 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brillapubliccharterschools/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:03:45,247 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brilliantearth/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:07:20,938 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brinqa/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:07:20,943 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brincdrones/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:07:20,943 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brio/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:07:20,945 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/britandco/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:07:20,946 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/britco/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:07:20,946 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brinkcommunications/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:07:20,948 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/bringg/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:07:20,972 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/britishasiantrust/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:07:21,121 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/britive/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:07:21,363 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/briza/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:07:21,627 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brkz/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:07:21,870 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/broadlands/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:07:22,146 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/broadly/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:07:22,378 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/broadriver/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:07:22,644 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/broadsign/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:07:22,973 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/broadsignfr/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:07:23,531 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/broadvoice/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:07:23,531 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/broadstone/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:07:23,630 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/broadway/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:07:23,893 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/broadwayventures/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:07:24,410 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brookecharterschools/jobs?content=true "HTTP/1.1 200 OK"
+2026-10-28 23:07:24,417 INFO httpx HTTP Request: GET https://boards-api.greenhouse.io/v1/boards/brookfieldinstitute/jobs?content=true "HTTP/1.1 404 Not Found"
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19574 provider=greenhouse status=SUCCESS records=1 requests=1 elapsed=0.06s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19575 provider=greenhouse status=FAILED records=0 requests=0 elapsed=0.30s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19576 provider=greenhouse status=SUCCESS records=0 requests=1 elapsed=0.55s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19577 provider=greenhouse status=FAILED records=0 requests=0 elapsed=0.80s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19578 provider=greenhouse status=SUCCESS records=2 requests=1 elapsed=1.05s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19579 provider=greenhouse status=SUCCESS records=8 requests=1 elapsed=1.31s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19580 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.55s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19581 provider=greenhouse status=SUCCESS records=2 requests=1 elapsed=1.80s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19582 provider=greenhouse status=SUCCESS records=13 requests=1 elapsed=2.12s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19583 provider=greenhouse status=SUCCESS records=73 requests=1 elapsed=214.31s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19584 provider=greenhouse status=FAILED records=0 requests=0 elapsed=214.19s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19585 provider=greenhouse status=SUCCESS records=1 requests=1 elapsed=213.95s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19586 provider=greenhouse status=FAILED records=0 requests=0 elapsed=213.69s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19587 provider=greenhouse status=SUCCESS records=1 requests=1 elapsed=213.43s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19588 provider=greenhouse status=FAILED records=0 requests=0 elapsed=213.19s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19589 provider=greenhouse status=FAILED records=0 requests=0 elapsed=212.94s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19590 provider=greenhouse status=FAILED records=0 requests=0 elapsed=212.56s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19591 provider=greenhouse status=SUCCESS records=2 requests=1 elapsed=0.16s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19592 provider=greenhouse status=SUCCESS records=15 requests=1 elapsed=0.20s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19593 provider=greenhouse status=FAILED records=0 requests=0 elapsed=0.42s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19594 provider=greenhouse status=SUCCESS records=24 requests=1 elapsed=0.83s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19595 provider=greenhouse status=FAILED records=0 requests=0 elapsed=0.94s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19596 provider=greenhouse status=FAILED records=0 requests=0 elapsed=1.20s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19597 provider=greenhouse status=SUCCESS records=3 requests=1 elapsed=1.43s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19598 provider=greenhouse status=SUCCESS records=13 requests=1 elapsed=1.97s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19599 provider=greenhouse status=SUCCESS records=9 requests=1 elapsed=2.49s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19600 provider=greenhouse status=FAILED records=0 requests=0 elapsed=2.39s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19601 provider=greenhouse status=FAILED records=0 requests=0 elapsed=2.17s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19602 provider=greenhouse status=SUCCESS records=5 requests=1 elapsed=1.87s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19603 provider=greenhouse status=SUCCESS records=18 requests=1 elapsed=2.47s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19604 provider=greenhouse status=SUCCESS records=10 requests=1 elapsed=2.27s
+2026-10-28 23:07:24,418 INFO ats_finder.worker source=19605 provider=greenhouse status=FAILED records=0 requests=0 elapsed=2.04s
+2026-10-28 23:07:24,588 INFO ats_finder.monitor telemetry stop sample 7823/36384 attempted, remaining 28561, eta 1913m -> data/ats_finder.monitor.jsonl

@@ -12,7 +12,7 @@ _TAG_RE = re.compile(r"<[^>]+>")
 _SPACE_RE = re.compile(r"\s+")
 _JAVA_RE = re.compile(r"(?<!\w)java(?!\w)", re.IGNORECASE)
 _EXCLUDED_TITLE_RE = re.compile(
-    r"(?<!\w)(?:staff|principle|principal|manager)(?!\w)",
+    r"(?<!\w)(?:staff|principle|principal|manager|architect)(?!\w)",
     re.IGNORECASE,
 )
 

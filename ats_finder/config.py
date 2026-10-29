@@ -21,6 +21,22 @@ def _env_float(name: str, default: float, minimum: float = 0.0) -> float:
     return value
 
 
+def _monitor_log_path(database_path: Path) -> Path | None:
+    """Resolve the automatic telemetry log, next to the database by default."""
+
+    raw = os.getenv("ATS_FINDER_MONITOR_LOG")
+    if raw is None:
+        if str(database_path) == ":memory:":
+            return None
+        if database_path.suffix:
+            return database_path.with_suffix(".monitor.jsonl")
+        return database_path.with_name(f"{database_path.name}.monitor.jsonl")
+    value = raw.strip()
+    if not value or value.casefold() in {"off", "none", "disabled"}:
+        return None
+    return Path(value)
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     """Runtime settings shared by the scanner, worker, and dashboard."""
@@ -36,11 +52,14 @@ class Settings:
     max_pages: int = 1000
     lever_page_size: int = 100
     user_agent: str = "CanadaJavaATSFinder/1.0 (+respectful public job-board monitor)"
+    monitor_log_path: Path | None = Path("data/ats_finder.monitor.jsonl")
+    monitor_interval_seconds: int = 60
 
     @classmethod
     def from_env(cls) -> "Settings":
+        database_path = Path(os.getenv("ATS_FINDER_DB", "data/ats_finder.sqlite3"))
         return cls(
-            database_path=Path(os.getenv("ATS_FINDER_DB", "data/ats_finder.sqlite3")),
+            database_path=database_path,
             scan_interval_seconds=_env_int("ATS_FINDER_SCAN_INTERVAL_SECONDS", 3600, 60),
             stale_after_intervals=_env_float("ATS_FINDER_STALE_AFTER_INTERVALS", 2.0, 1.0),
             concurrency=_env_int("ATS_FINDER_CONCURRENCY", 8, 1),
@@ -53,6 +72,10 @@ class Settings:
             user_agent=os.getenv(
                 "ATS_FINDER_USER_AGENT",
                 "CanadaJavaATSFinder/1.0 (+respectful public job-board monitor)",
+            ),
+            monitor_log_path=_monitor_log_path(database_path),
+            monitor_interval_seconds=_env_int(
+                "ATS_FINDER_MONITOR_INTERVAL_SECONDS", 60, 1
             ),
         )
 

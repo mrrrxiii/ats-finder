@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Iterable
+from typing import Callable, Iterable
 
 import pandas as pd
 import streamlit as st
@@ -17,6 +17,18 @@ from ats_finder.models import (
     SourceLastScanResult,
     SourceSupportStatus,
 )
+
+
+RECENT_WINDOW_OPTIONS: dict[str, timedelta] = {
+    "24 hours": timedelta(hours=24),
+    "72 hours": timedelta(hours=72),
+    "7 days": timedelta(days=7),
+    "30 days": timedelta(days=30),
+}
+DEFAULT_RECENT_WINDOW = "72 hours"
+
+JOB_DETAIL_SELECTION_KEY = "job_detail_selection"
+ROW_PICK_STATE_KEY = "job_detail_row_pick"
 
 
 DISCOVERY_LABELS = {
@@ -63,15 +75,15 @@ def recent_job_row(job: RecentJob, *, now: datetime | None = None) -> dict[str, 
     return {
         "Company": job.company,
         "Job Title": job.title,
+        "Published At": job.published_at,
+        "Application URL": job.application_url,
         "Location": job.location,
         "Work Mode": job.workplace_type.value.title(),
         "Discovery Type": discovery_label(job.discovery_type),
         "Evidence Age": evidence_age_label(job, now=now),
-        "Published At": job.published_at,
         "First Seen": job.first_seen_at,
         "Previous Board Scan": job.previous_board_scan_at,
         "ATS": job.provider.title(),
-        "Application URL": job.application_url,
         "Application Status": job.application_status.value,
         "Job ID": job.job_id,
     }
@@ -81,15 +93,35 @@ def _frame(rows: Iterable[dict[str, object]]) -> pd.DataFrame:
     return pd.DataFrame(list(rows))
 
 
-def _render_job_table(frame: pd.DataFrame, *, key: str) -> None:
+def row_pick_job_id(frame: pd.DataFrame, rows: Iterable[int]) -> int | None:
+    """Return the job id behind a clicked table row, or None when it cannot be mapped."""
+    if "Job ID" not in frame.columns:
+        return None
+    picked = list(rows)
+    if not picked:
+        return None
+    index = picked[0]
+    if index < 0 or index >= len(frame):
+        return None
+    return int(frame["Job ID"].iloc[index])
+
+
+def _render_job_table(
+    frame: pd.DataFrame,
+    *,
+    key: str,
+    on_row_pick: Callable[[int], None] | None = None,
+) -> None:
     if frame.empty:
         st.info("No jobs meet this section's confirmed evidence rules.")
         return
     visible = frame.drop(columns=["Job ID"], errors="ignore")
-    st.dataframe(
+    event = st.dataframe(
         visible,
         width="stretch",
         hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
         column_config={
             "Application URL": st.column_config.LinkColumn(
                 "Official application", display_text="Apply"
@@ -106,6 +138,13 @@ def _render_job_table(frame: pd.DataFrame, *, key: str) -> None:
         },
         key=f"table_{key}",
     )
+    if on_row_pick is not None and event is not None:
+        job_id = row_pick_job_id(frame, event.selection.rows)
+        if job_id is not None:
+            signature = f"{key}:{job_id}"
+            if st.session_state.get(ROW_PICK_STATE_KEY) != signature:
+                st.session_state[ROW_PICK_STATE_KEY] = signature
+                on_row_pick(job_id)
     st.download_button(
         "Download CSV",
         visible.to_csv(index=False).encode("utf-8"),
@@ -130,15 +169,28 @@ def _application_editor(database: Database, job_id: int, current: ApplicationSta
 
 
 def latest_page(database: Database, settings: Settings) -> None:
+    del settings
     st.header("Latest Java Openings")
     st.caption(
         "Only confirmed Java roles in Ottawa or explicitly remote from Canada are shown. "
-        "Titles containing Staff, Principle, Principal, or Manager are excluded. "
+        "Titles containing Staff, Principle, Principal, Manager, or Architect are excluded. "
         "Publication time and first-detection time are deliberately not conflated."
     )
+    window_label = st.selectbox(
+        "Evidence window",
+        list(RECENT_WINDOW_OPTIONS),
+        index=list(RECENT_WINDOW_OPTIONS).index(DEFAULT_RECENT_WINDOW),
+        key="recent_window",
+        help=(
+            "Verified publication or snapshot-detection evidence must fall inside this "
+            "window to be listed."
+        ),
+    )
+    window = RECENT_WINDOW_OPTIONS[window_label]
     unified = st.toggle("Use unified evidence-time sort", value=False)
     now = datetime.now(timezone.utc)
-    jobs = ScanEngine(database).recent_jobs(now=now, unified_sort=unified)
+    engine = ScanEngine(database)
+    jobs = engine.recent_jobs(now=now, window=window, unified_sort=unified)
     rows = [recent_job_row(job, now=now) for job in jobs]
     frame = _frame(rows)
 
@@ -151,25 +203,46 @@ def latest_page(database: Database, settings: Settings) -> None:
         == discovery_label(DiscoveryType.NEWLY_DETECTED)
     ] if not frame.empty else frame
 
-    st.subheader("Verified recent publication")
-    st.caption("The ATS exposes a documented publication or republication timestamp.")
-    _render_job_table(verified, key="verified_recent_java_jobs")
+    def _select_job(job_id: int) -> None:
+        """Select a job for the detail panel without touching the picker mid-run."""
+        if st.session_state.get(JOB_DETAIL_SELECTION_KEY) != str(job_id):
+            st.session_state[JOB_DETAIL_SELECTION_KEY] = str(job_id)
 
+    st.subheader("Verified recent publication")
+    st.caption(
+        "The ATS exposes a documented publication or republication timestamp inside "
+        f"the last {window_label}."
+    )
+    _render_job_table(
+        verified, key="verified_recent_java_jobs", on_row_pick=_select_job
+    )
+
+    snapshot_gap_hours = engine.policy.snapshot_max_gap.total_seconds() / 3600
     st.subheader("Newly detected by snapshot comparison")
     st.caption(
         "These jobs were absent from the preceding complete board snapshot, taken no "
-        "more than 24 hours earlier. This is observation evidence, not a publication date."
+        f"more than {snapshot_gap_hours:g} hours earlier, and were first observed inside "
+        f"the last {window_label}. This is observation evidence, not a publication date."
     )
-    _render_job_table(detected, key="newly_detected_java_jobs")
+    _render_job_table(
+        detected, key="newly_detected_java_jobs", on_row_pick=_select_job
+    )
 
     if jobs:
         st.subheader("Job detail")
-        selected = st.selectbox(
+        labels = {str(job.job_id): f"{job.company} — {job.title}" for job in jobs}
+        options = list(labels)
+        if st.session_state.get(JOB_DETAIL_SELECTION_KEY) not in labels:
+            st.session_state[JOB_DETAIL_SELECTION_KEY] = options[0]
+        selected_id = st.selectbox(
             "Choose a job",
-            jobs,
-            format_func=lambda job: f"{job.company} — {job.title}",
+            options,
+            format_func=lambda option: labels.get(option, option),
+            key=JOB_DETAIL_SELECTION_KEY,
+            help="Click a table row or pick a job here; this panel keeps your choice "
+            "while new results arrive.",
         )
-        record = database.get_job(selected.job_id)
+        record = database.get_job(int(selected_id))
         if record is not None:
             st.markdown(f"### {record.title}")
             st.write(record.description or "No description was returned by the ATS.")

@@ -31,7 +31,8 @@ from .models import (
 )
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+_UPGRADABLE_SCHEMA_VERSIONS = frozenset({1, 2})
 
 
 def datetime_to_storage(value: datetime | None) -> str | None:
@@ -106,10 +107,11 @@ class Database:
                 current_version = int(current["value"])
                 if current_version == SCHEMA_VERSION:
                     return
-                if current_version != 1:
+                if current_version not in _UPGRADABLE_SCHEMA_VERSIONS:
                     raise RuntimeError(
                         "unsupported database schema version "
-                        f"{current_version}; expected 1 or {SCHEMA_VERSION}"
+                        f"{current_version}; expected one of "
+                        f"{sorted(_UPGRADABLE_SCHEMA_VERSIONS | {SCHEMA_VERSION})}"
                     )
 
             self._connection.executescript(
@@ -302,6 +304,12 @@ class Database:
                     ON jobs(publication_is_verified, published_at);
                 CREATE INDEX IF NOT EXISTS idx_jobs_recent_discovery
                     ON jobs(discovery_type, discovery_at);
+                CREATE INDEX IF NOT EXISTS idx_jobs_repost_link
+                    ON jobs(potential_repost_of_job_id);
+                CREATE INDEX IF NOT EXISTS idx_observations_repost_link
+                    ON job_observations(potential_repost_of_job_id);
+                CREATE INDEX IF NOT EXISTS idx_job_events_repost_link
+                    ON job_events(potential_repost_of_job_id);
                 CREATE INDEX IF NOT EXISTS idx_observations_scan_present
                     ON job_observations(scan_id, is_present);
                 CREATE INDEX IF NOT EXISTS idx_observations_job_time
@@ -389,10 +397,11 @@ class Database:
                     "SELECT value FROM schema_metadata WHERE key = 'schema_version'"
                 ).fetchone()
                 existing_version = 1 if row is None else int(row["value"])
-                if existing_version not in {1, SCHEMA_VERSION}:
+                if existing_version not in _UPGRADABLE_SCHEMA_VERSIONS | {SCHEMA_VERSION}:
                     raise RuntimeError(
                         "unsupported database schema version "
-                        f"{existing_version}; expected 1 or {SCHEMA_VERSION}"
+                        f"{existing_version}; expected one of "
+                        f"{sorted(_UPGRADABLE_SCHEMA_VERSIONS | {SCHEMA_VERSION})}"
                     )
                 if existing_version == 1:
                     self._backfill_audit_tables()

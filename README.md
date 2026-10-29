@@ -16,8 +16,8 @@ A job enters the main results only when all four conditions hold:
 
 1. `Java` occurs as a standalone, case-insensitive word in the title or full
    description. `JavaScript`, JVM-only, and Spring-only text do not match.
-2. The title does not contain `Staff`, `Principle`, `Principal`, or `Manager`
-   as a standalone, case-insensitive word.
+2. The title does not contain `Staff`, `Principle`, `Principal`, `Manager`, or
+   `Architect` as a standalone, case-insensitive word.
 3. The role is in Ottawa, Kanata, or Stittsville, or the public posting or
    structured ATS data explicitly establishes remote eligibility from Canada.
    Ambiguous remote roles become `REVIEW_LOCATION` and are excluded.
@@ -39,6 +39,9 @@ Jobs with a verified publication timestamp strictly older than 60 days are
 hard-deleted with their stored history and are not persisted by later scans.
 The exact 60-day boundary is retained. Undated jobs and timestamps without
 verified publication semantics remain available for snapshot comparison.
+Retention runs in bounded batches (500 jobs per completed scan) so a large
+backlog drains over several scans instead of stalling a single board snapshot;
+the `ScanEngine.prune_expired_jobs()` maintenance call drains it in one go.
 
 `updated_at`, HTTP `Last-Modified`, search indexing time, and an ATS creation
 time are never substituted for publication time. An independently verified old
@@ -122,8 +125,55 @@ The optional global `--database` argument must precede the subcommand:
 .venv/bin/ats-finder --database /tmp/demo.sqlite3 recent --csv
 .venv/bin/ats-finder --database /tmp/demo.sqlite3 recent --unified-sort
 .venv/bin/ats-finder --database /tmp/demo.sqlite3 support-report
+.venv/bin/ats-finder --database /tmp/demo.sqlite3 monitor
+.venv/bin/ats-finder --database /tmp/demo.sqlite3 monitor --watch --interval 30
+.venv/bin/ats-finder --database /tmp/demo.sqlite3 monitor \
+  --json --jsonl /tmp/ats-scan-progress.jsonl
+.venv/bin/ats-finder monitor --history /tmp/ats-scan-progress.jsonl
 .venv/bin/ats-finder --database /tmp/demo.sqlite3 set-status 1 APPLIED
 ```
+
+### Initial-scan telemetry
+
+Telemetry is recorded automatically, with no extra command to remember. Every
+`ats-finder-worker` run (including `--once`) and every `ats-finder scan-due` or
+`scan-source` run starts a background sampler thread that appends one JSON line
+to `ATS_FINDER_MONITOR_LOG`. That path defaults to the database path with a
+`.monitor.jsonl` suffix, for example `data/ats_finder.monitor.jsonl`. A killed or
+crashed run therefore still leaves its samples on disk, and the file survives
+for later post-mortem analysis or tuning work.
+
+Each line carries `event` (`start`, `sample`, `stop`), `run_id`, `pid`, and
+`captured_at`, plus:
+
+- per-provider progress (`total`, `tried`, `ok`, `fail`, `inc`, `never`),
+  recent boards/minute, and an ETA for the never-scanned boards;
+- the current scan rate over the last 15 minutes plus the rate since the first
+  scan, so a stalled pass is obvious;
+- failure reasons grouped by provider (for example `HTTP 404 x2745 (ashby 1857,
+  greenhouse 888)`);
+- integrity signals: success scans with zero records, sources with repeated
+  failures, repost links, and evidence counts;
+- a `stalled` flag when no scan completed within 300 seconds.
+
+Sampling defaults to once per 60 seconds (`ATS_FINDER_MONITOR_INTERVAL_SECONDS`)
+and the log rotates to `<log>.1` at 50 MiB, so a multi-day run cannot grow
+without bound. Sampling or write failures (locked database, full disk) are
+logged and never interrupt the scan. Set `ATS_FINDER_MONITOR_LOG=off` to disable
+recording.
+
+Inspect a saved log later without touching the database:
+
+```bash
+.venv/bin/ats-finder monitor --history data/ats_finder.monitor.jsonl
+```
+
+The `monitor` command itself opens the database read-only (`mode=ro`), never runs
+migrations, and never holds a write lock, so it is safe to run in a second
+terminal while the worker or an initial `scan-due` pass is committing board
+checkpoints. `--watch` refreshes until interrupted, `--json` emits one
+machine-readable sample, and `--jsonl PATH` appends every sample as one JSON line
+for ad-hoc observation of a run started elsewhere.
 
 Application statuses are `NOT_APPLIED`, `SAVED`, `APPLIED`, `INTERVIEWING`,
 `OFFER`, `REJECTED`, `WITHDRAWN`, and `CLOSED`. Every status transition is
@@ -134,7 +184,11 @@ audited.
 - **Latest Java Openings** separates verified publication evidence from
   snapshot detection evidence, supports the required evidence-specific sort,
   exports CSV, displays job details, links only to official application URLs,
-  and updates application status.
+  and updates application status. The evidence window is selectable
+  (24 hours, 72 hours, 7 days, 30 days) and defaults to 72 hours; only rows
+  whose verified publication or snapshot detection falls inside that window are
+  listed. Clicking a table row or choosing from the "Job detail" picker selects
+  that exact job, and the selection survives while new results stream in.
 - **Scan Coverage** separates supported, unsupported, failed, incomplete,
   never-scanned, and stale sources. It reports observed scan frequency and job
   evidence totals.
@@ -178,6 +232,8 @@ latency, rate limits, retries, and configured concurrency.
 | `ATS_FINDER_MAX_PAGES` | `1000` | Pagination safety ceiling |
 | `ATS_FINDER_LEVER_PAGE_SIZE` | `100` | Lever page size |
 | `ATS_FINDER_USER_AGENT` | `CanadaJavaATSFinder/1.0 (+respectful public job-board monitor)` | HTTP user agent |
+| `ATS_FINDER_MONITOR_LOG` | `<database>.monitor.jsonl` | Automatic telemetry JSONL path; `off` disables it |
+| `ATS_FINDER_MONITOR_INTERVAL_SECONDS` | `60` | Telemetry sample interval; minimum 1 |
 
 Example conservative settings:
 

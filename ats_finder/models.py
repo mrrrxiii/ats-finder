@@ -243,6 +243,7 @@ class EnginePolicy:
     recent_window: timedelta = timedelta(hours=24)
     snapshot_max_gap: timedelta = timedelta(hours=24)
     verified_publication_retention: timedelta = timedelta(days=60)
+    retention_delete_batch_size: int = 500
     stale_source_after: timedelta | None = None
     repost_similarity_threshold: float = 0.92
     repost_title_similarity_threshold: float = 0.95
@@ -257,6 +258,8 @@ class EnginePolicy:
             raise ValueError("snapshot_max_gap must be positive")
         if self.verified_publication_retention <= timedelta(0):
             raise ValueError("verified_publication_retention must be positive")
+        if self.retention_delete_batch_size <= 0:
+            raise ValueError("retention_delete_batch_size must be positive")
         if self.stale_source_after is not None and self.stale_source_after <= timedelta(0):
             raise ValueError("stale_source_after must be positive when configured")
         for name in ("repost_similarity_threshold", "repost_title_similarity_threshold"):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 import hashlib
@@ -39,6 +40,28 @@ from .models import (
 
 
 _NON_WORD_RE = re.compile(r"[^\w]+", re.UNICODE)
+
+# Character-level difflib ratios are quadratic, so a single 8 KB description pair
+# costs over a second. Repost matching therefore compares the normalized title
+# with SequenceMatcher (short strings) and descriptions with a bounded
+# token-shingle Dice coefficient computed once per candidate.
+_REPOST_TITLE_MAX_CHARS = 200
+_REPOST_DESCRIPTION_MAX_TOKENS = 512
+_REPOST_SHINGLE_TOKENS = 3
+_REPOST_TITLE_TOKEN_OVERLAP = 0.5
+
+
+@dataclass(frozen=True, slots=True)
+class _RepostCandidate:
+    """Pre-normalized job evidence reused across every repost comparison."""
+
+    original_id: int
+    fingerprint: str
+    title: str
+    title_tokens: frozenset[str]
+    description_shingles: frozenset[int]
+    location: str
+
 
 
 class ScanEngine:
@@ -407,12 +430,26 @@ class ScanEngine:
         return results
 
     def prune_expired_jobs(self, *, now: datetime | None = None) -> int:
-        """Hard-delete jobs whose verified publication is older than retention."""
+        """Hard-delete jobs whose verified publication is older than retention.
+
+        Deletion runs in bounded batches so a large backlog does not hold one
+        write transaction (and its WAL) open for the whole purge.
+        """
 
         current = as_utc(now) if now is not None else utc_now()
         cutoff = current - self.policy.verified_publication_retention
-        with self.database.transaction() as connection:
-            return self._hard_delete_expired_jobs(connection, cutoff=cutoff)
+        batch_size = self.policy.retention_delete_batch_size
+        deleted = 0
+        while True:
+            with self.database.transaction() as connection:
+                batch = self._hard_delete_expired_jobs(
+                    connection,
+                    cutoff=cutoff,
+                    limit=batch_size,
+                )
+            deleted += batch
+            if batch < batch_size:
+                return deleted
 
     def _record_unsuccessful_scan(
         self,
@@ -522,6 +559,7 @@ class ScanEngine:
                 cutoff=cutoff,
                 protected_job_ids=protected_job_ids,
                 additional_job_ids=expired_existing_ids,
+                limit=self.policy.retention_delete_batch_size,
             )
             jobs = tuple(retained_jobs)
             previous = self._previous_complete_scan(connection, source_id)
@@ -567,7 +605,9 @@ class ScanEngine:
                 (source_id,),
             ).fetchall()
             history_by_external_id = {row["provider_job_id"]: row for row in history_rows}
-            repost_candidates: list[sqlite3.Row] = list(history_rows)
+            repost_candidates: dict[str, list[_RepostCandidate]] = {}
+            for row in history_rows:
+                self._add_repost_candidate(repost_candidates, row)
             current_ids = {job.provider_job_id for job in jobs}
 
             for job in sorted(jobs, key=lambda value: value.provider_job_id):
@@ -596,9 +636,6 @@ class ScanEngine:
                     match = self._find_potential_repost(
                         job,
                         company,
-                        decision.workplace_type,
-                        decision.canada_remote_eligibility,
-                        evidence,
                         fingerprint,
                         repost_candidates,
                     )
@@ -662,7 +699,7 @@ class ScanEngine:
                     existing = connection.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
                     assert existing is not None
                     history_by_external_id[job.provider_job_id] = existing
-                    repost_candidates.append(existing)
+                    self._add_repost_candidate(repost_candidates, existing)
                 else:
                     job_id = int(existing["id"])
                     was_in_previous_snapshot = job.provider_job_id in previous_present_ids
@@ -832,9 +869,29 @@ class ScanEngine:
         cutoff: datetime,
         protected_job_ids: Iterable[int] = (),
         additional_job_ids: Iterable[int] = (),
+        limit: int | None = None,
     ) -> int:
-        """Stage retention targets, clear repost links, and cascade-delete them."""
+        """Stage retention targets, clear repost links, and cascade-delete them.
 
+        ``limit`` bounds how many expired jobs a single call removes. Scans pass
+        a small batch so a large retention backlog drains over several runs
+        instead of blocking the event loop for minutes inside one snapshot.
+        """
+
+        if limit is not None and limit <= 0:
+            raise ValueError("limit must be positive when provided")
+        connection.execute(
+            """
+            CREATE TEMP TABLE IF NOT EXISTS _ats_finder_retention_protected (
+                job_id INTEGER PRIMARY KEY
+            )
+            """
+        )
+        connection.execute("DELETE FROM _ats_finder_retention_protected")
+        connection.executemany(
+            "INSERT OR IGNORE INTO _ats_finder_retention_protected(job_id) VALUES (?)",
+            ((int(job_id),) for job_id in protected_job_ids),
+        )
         connection.execute(
             """
             CREATE TEMP TABLE IF NOT EXISTS _ats_finder_retention_targets (
@@ -843,19 +900,19 @@ class ScanEngine:
             """
         )
         connection.execute("DELETE FROM _ats_finder_retention_targets")
-        connection.execute(
-            """
+        staging = """
             INSERT OR IGNORE INTO _ats_finder_retention_targets(job_id)
             SELECT id
             FROM jobs
             WHERE publication_is_verified = 1 AND published_at < ?
-            """,
-            (datetime_to_storage(cutoff),),
-        )
-        connection.executemany(
-            "DELETE FROM _ats_finder_retention_targets WHERE job_id = ?",
-            ((int(job_id),) for job_id in protected_job_ids),
-        )
+              AND id NOT IN (SELECT job_id FROM _ats_finder_retention_protected)
+            """
+        parameters: tuple[object, ...] = (datetime_to_storage(cutoff),)
+        if limit is not None:
+            staging += " LIMIT ?"
+            parameters += (int(limit),)
+        connection.execute(staging, parameters)
+        connection.execute("DELETE FROM _ats_finder_retention_protected")
         connection.executemany(
             "INSERT OR IGNORE INTO _ats_finder_retention_targets(job_id) VALUES (?)",
             ((int(job_id),) for job_id in additional_job_ids),
@@ -1014,49 +1071,105 @@ class ScanEngine:
     def _similarity_text(value: str) -> str:
         return _NON_WORD_RE.sub(" ", plain_text(value).casefold()).strip()
 
+    @staticmethod
+    def _title_tokens(title: str) -> frozenset[str]:
+        return frozenset(title.split())
+
+    @classmethod
+    def _description_shingles(cls, description: str) -> frozenset[int]:
+        tokens = description.split()
+        if len(tokens) > _REPOST_DESCRIPTION_MAX_TOKENS:
+            tokens = tokens[:_REPOST_DESCRIPTION_MAX_TOKENS]
+        if len(tokens) < _REPOST_SHINGLE_TOKENS:
+            return frozenset(hash(token) for token in tokens)
+        return frozenset(
+            hash(" ".join(tokens[index : index + _REPOST_SHINGLE_TOKENS]))
+            for index in range(len(tokens) - _REPOST_SHINGLE_TOKENS + 1)
+        )
+
+    @staticmethod
+    def _dice_similarity(left: frozenset[int], right: frozenset[int]) -> float:
+        if not left or not right:
+            return 0.0
+        return (2.0 * len(left & right)) / (len(left) + len(right))
+
+    @staticmethod
+    def _title_similarity(left: str, right: str) -> float:
+        return SequenceMatcher(
+            None,
+            left[:_REPOST_TITLE_MAX_CHARS],
+            right[:_REPOST_TITLE_MAX_CHARS],
+            autojunk=False,
+        ).ratio()
+
+    @staticmethod
+    def _token_overlap(left: frozenset[str], right: frozenset[str]) -> float:
+        if not left or not right:
+            return 0.0
+        union = len(left | right)
+        return len(left & right) / union if union else 0.0
+
+    def _repost_candidate(self, row: sqlite3.Row) -> tuple[str, _RepostCandidate]:
+        company = self._similarity_text(row["company"] or "")
+        title = self._similarity_text(row["title"] or "")
+        return company, _RepostCandidate(
+            original_id=int(row["potential_repost_of_job_id"] or row["id"]),
+            fingerprint=str(row["content_fingerprint"]),
+            title=title,
+            title_tokens=self._title_tokens(title),
+            description_shingles=self._description_shingles(
+                self._similarity_text(row["description"] or "")
+            ),
+            location=self._similarity_text(row["location"] or ""),
+        )
+
+    def _add_repost_candidate(
+        self,
+        candidates: dict[str, list[_RepostCandidate]],
+        row: sqlite3.Row,
+    ) -> None:
+        company, candidate = self._repost_candidate(row)
+        candidates.setdefault(company, []).append(candidate)
+
     def _find_potential_repost(
         self,
         job: NormalizedJob,
         company: str,
-        workplace_type: WorkplaceType,
-        canada_remote_eligibility: bool | None,
-        publication: dict[str, object | None],
         fingerprint: str,
-        candidates: list[sqlite3.Row],
+        candidates: dict[str, list[_RepostCandidate]],
     ) -> tuple[int, float] | None:
-        del workplace_type, canada_remote_eligibility, publication
         title = self._similarity_text(job.title)
-        description = self._similarity_text(job.description)
+        title_tokens = self._title_tokens(title)
+        description_shingles = self._description_shingles(
+            self._similarity_text(job.description)
+        )
         location = self._similarity_text(job.location)
         normalized_company = self._similarity_text(company)
         best: tuple[int, float] | None = None
-        for candidate in candidates:
-            if self._similarity_text(candidate["company"]) != normalized_company:
-                continue
-            if candidate["content_fingerprint"] == fingerprint:
+        for candidate in candidates.get(normalized_company, ()):
+            if candidate.fingerprint == fingerprint:
                 score = 1.0
             else:
-                candidate_title = self._similarity_text(candidate["title"])
-                title_score = SequenceMatcher(None, title, candidate_title, autojunk=False).ratio()
+                if (
+                    self._token_overlap(title_tokens, candidate.title_tokens)
+                    < _REPOST_TITLE_TOKEN_OVERLAP
+                ):
+                    continue
+                title_score = self._title_similarity(title, candidate.title)
                 if title_score < self.policy.repost_title_similarity_threshold:
                     continue
-                candidate_description = self._similarity_text(candidate["description"])
-                candidate_location = self._similarity_text(candidate["location"])
-                location_score = SequenceMatcher(
-                    None, location, candidate_location, autojunk=False
-                ).ratio()
-                if description and candidate_description:
-                    description_score = SequenceMatcher(
-                        None, description, candidate_description, autojunk=False
-                    ).ratio()
+                location_score = self._title_similarity(location, candidate.location)
+                if description_shingles and candidate.description_shingles:
+                    description_score = self._dice_similarity(
+                        description_shingles, candidate.description_shingles
+                    )
                     score = 0.65 * title_score + 0.25 * description_score + 0.10 * location_score
                 else:
                     score = 0.85 * title_score + 0.15 * location_score
             if score >= self.policy.repost_similarity_threshold and (
                 best is None or score > best[1]
             ):
-                original_id = candidate["potential_repost_of_job_id"] or candidate["id"]
-                best = (int(original_id), score)
+                best = (candidate.original_id, score)
         return best
 
     @staticmethod

@@ -4,10 +4,12 @@ import argparse
 import asyncio
 import logging
 import signal
+from contextlib import ExitStack
 from datetime import datetime, timezone
 
 from ats_finder.config import Settings
 from ats_finder.db import Database
+from ats_finder.monitor import monitoring_session
 from ats_finder.scanner import BoardScanner
 
 
@@ -30,7 +32,8 @@ async def run_worker(
 
     completed_scans = 0
     effective_batch = batch_size or max(settings.concurrency * 4, settings.concurrency)
-    with Database(settings.database_path) as database:
+    with Database(settings.database_path) as database, ExitStack() as stack:
+        stack.enter_context(monitoring_session(settings))
         async with BoardScanner(database, settings) as scanner:
             while not stop.is_set():
                 try:

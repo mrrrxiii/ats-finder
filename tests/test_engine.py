@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import timedelta
 
 import pytest
@@ -11,6 +12,7 @@ from ats_finder.filters import classify_location, has_excluded_title, matches_ja
 from ats_finder.models import (
     ApplicationStatus,
     DiscoveryType,
+    EnginePolicy,
     JobState,
     LocationMatch,
     NormalizedJob,
@@ -233,6 +235,83 @@ def test_same_posting_with_new_identifier_is_flagged_as_potential_repost(
     assert repost.potential_repost_of_job_id == original.id
     assert repost.repost_similarity == pytest.approx(1.0)
     assert harness.engine.recent_jobs(now=second_at) == []
+
+
+def test_near_duplicate_posting_with_new_identifier_is_flagged_as_potential_repost(
+    harness: EngineHarness,
+    job_factory: JobFactory,
+) -> None:
+    described = (
+        "We are hiring a senior Java engineer to build payment services on our "
+        "platform team in Ottawa. You will design APIs, review code, and mentor "
+        "developers across the organization. "
+    ) * 8
+    harness.engine.process_complete_scan(
+        harness.source.id,
+        [job_factory("old-id", title="Senior Java Engineer", description=described)],
+        completed_at=FIXED_NOW,
+    )
+    original = harness.database.get_job_by_external_id(harness.source.id, "old-id")
+    assert original is not None
+
+    outcome = harness.engine.process_complete_scan(
+        harness.source.id,
+        [
+            job_factory(
+                "new-id",
+                title="Senior Java Engineer",
+                description=described + "Applications close on Friday.",
+            )
+        ],
+        completed_at=FIXED_NOW + timedelta(hours=1),
+    )
+
+    assert outcome.potential_reposts == ("new-id",)
+    repost = harness.database.get_job_by_external_id(harness.source.id, "new-id")
+    assert repost is not None
+    assert repost.potential_repost_of_job_id == original.id
+    assert repost.repost_similarity is not None
+    assert repost.repost_similarity >= harness.engine.policy.repost_similarity_threshold
+
+
+def test_distinct_posting_at_the_same_company_is_not_flagged_as_potential_repost(
+    harness: EngineHarness,
+    job_factory: JobFactory,
+) -> None:
+    harness.engine.process_complete_scan(
+        harness.source.id,
+        [job_factory("old-id", title="Java Developer", description="Build Java services.")],
+        completed_at=FIXED_NOW,
+    )
+
+    outcome = harness.engine.process_complete_scan(
+        harness.source.id,
+        [
+            job_factory(
+                "new-id",
+                title="Marketing Manager",
+                description="Own the campaign calendar and the brand voice.",
+            )
+        ],
+        completed_at=FIXED_NOW + timedelta(hours=1),
+    )
+
+    assert outcome.potential_reposts == ()
+    assert outcome.added == ("new-id",)
+
+
+def test_description_shingles_stay_bounded_for_long_postings() -> None:
+    description = " ".join(f"token{index}" for index in range(5000))
+
+    shingles = ScanEngine._description_shingles(description)
+
+    assert 0 < len(shingles) <= 512
+    assert (
+        ScanEngine._dice_similarity(
+            shingles, ScanEngine._description_shingles(description)
+        )
+        == 1.0
+    )
 
 
 def test_failed_scan_does_not_replace_the_last_complete_snapshot(
@@ -494,6 +573,69 @@ def test_retention_purge_clears_repost_links_but_keeps_the_repost(
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
+def test_scan_reaps_the_retention_backlog_in_bounded_batches(
+    harness: EngineHarness,
+    job_factory: JobFactory,
+) -> None:
+    published_at = FIXED_NOW - timedelta(days=59)
+    harness.engine.process_complete_scan(
+        harness.source.id,
+        [
+            _verified_job(job_factory, f"aging-{index}", published_at=published_at)
+            for index in range(5)
+        ],
+        completed_at=FIXED_NOW,
+    )
+    assert len(harness.database.list_jobs(source_id=harness.source.id)) == 5
+
+    batched = ScanEngine(
+        harness.database,
+        policy=replace(harness.engine.policy, retention_delete_batch_size=2),
+    )
+    later = FIXED_NOW + timedelta(days=2)
+    batched.process_complete_scan(harness.source.id, [], completed_at=later)
+    assert len(harness.database.list_jobs(source_id=harness.source.id)) == 3
+
+    for offset in range(1, 3):
+        batched.process_complete_scan(
+            harness.source.id,
+            [],
+            completed_at=later + timedelta(hours=offset),
+        )
+    assert harness.database.list_jobs(source_id=harness.source.id) == []
+    with harness.database.read() as connection:
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_prune_expired_jobs_drains_the_backlog_across_batches(
+    harness: EngineHarness,
+    job_factory: JobFactory,
+) -> None:
+    published_at = FIXED_NOW - timedelta(days=59)
+    harness.engine.process_complete_scan(
+        harness.source.id,
+        [
+            _verified_job(job_factory, f"aging-{index}", published_at=published_at)
+            for index in range(5)
+        ],
+        completed_at=FIXED_NOW,
+    )
+
+    pruning = ScanEngine(
+        harness.database,
+        policy=replace(harness.engine.policy, retention_delete_batch_size=2),
+    )
+    deleted = pruning.prune_expired_jobs(now=FIXED_NOW + timedelta(days=2))
+
+    assert deleted == 5
+    assert harness.database.list_jobs(source_id=harness.source.id) == []
+
+
+def test_engine_policy_requires_a_positive_retention_batch_size() -> None:
+    with pytest.raises(ValueError, match="retention_delete_batch_size"):
+        EnginePolicy(retention_delete_batch_size=0)
+
+
 def test_missing_publication_date_remains_an_unverified_baseline(
     harness: EngineHarness,
     job_factory: JobFactory,
@@ -583,6 +725,11 @@ def test_java_word_boundary_rejects_javascript_only(
         ("Java Staffing Platform Engineer", False),
         ("Java Management Platform Engineer", False),
         ("Senior Java Engineer", False),
+        ("Cloud Solution Architect (Java)", True),
+        ("AWS ARCHITECT, Java Platform", True),
+        ("Java Architect", True),
+        ("Java Architecture Team Engineer", False),
+        ("Java Architectural Tooling Engineer", False),
     ],
 )
 def test_excluded_title_words_are_case_insensitive_whole_words(

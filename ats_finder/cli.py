@@ -4,7 +4,10 @@ import argparse
 import asyncio
 import csv
 import json
+import os
 import sys
+import time
+from contextlib import ExitStack
 from dataclasses import asdict, is_dataclass, replace
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -16,6 +19,14 @@ from ats_finder.db import Database
 from ats_finder.engine import ScanEngine
 from ats_finder.importer import download_dataset, import_payload, load_local_dataset
 from ats_finder.models import ApplicationStatus, SourceInput, SourceSupportStatus
+from ats_finder.monitor import (
+    collect_snapshot,
+    monitoring_session,
+    new_run_id,
+    render_history,
+    render_text,
+    sample_record,
+)
 from ats_finder.scanner import BoardScanner
 from ats_finder.sources import source_candidate
 
@@ -55,14 +66,16 @@ async def _import_command(args: argparse.Namespace, settings: Settings) -> None:
 
 
 async def _scan_source(args: argparse.Namespace, settings: Settings) -> None:
-    with Database(settings.database_path) as database:
+    with Database(settings.database_path) as database, ExitStack() as stack:
+        stack.enter_context(monitoring_session(settings))
         async with BoardScanner(database, settings) as scanner:
             result = await scanner.scan_source(args.source_id)
     _print_json(result)
 
 
 async def _scan_due(args: argparse.Namespace, settings: Settings) -> None:
-    with Database(settings.database_path) as database:
+    with Database(settings.database_path) as database, ExitStack() as stack:
+        stack.enter_context(monitoring_session(settings))
         async with BoardScanner(database, settings) as scanner:
             results = await scanner.scan_due(limit=args.limit)
     _print_json(results)
@@ -136,6 +149,64 @@ def _support_report(settings: Settings) -> None:
     _print_json(report)
 
 
+def _monitor_command(
+    args: argparse.Namespace,
+    settings: Settings,
+    parser: argparse.ArgumentParser,
+) -> None:
+    if args.history:
+        try:
+            print(render_history(args.history))
+        except FileNotFoundError as exc:
+            parser.error(str(exc))
+        return
+    if args.window_minutes <= 0:
+        parser.error("--window-minutes must be positive")
+    if args.stall_seconds <= 0:
+        parser.error("--stall-seconds must be positive")
+    if args.interval <= 0:
+        parser.error("--interval must be positive")
+    jsonl_path = Path(args.jsonl) if args.jsonl else None
+    if jsonl_path is not None:
+        jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+    run_id = new_run_id()
+    try:
+        first = True
+        while True:
+            try:
+                snapshot = collect_snapshot(
+                    settings.database_path,
+                    window_minutes=args.window_minutes,
+                    stall_seconds=args.stall_seconds,
+                )
+            except (FileNotFoundError, RuntimeError) as exc:
+                parser.error(str(exc))
+            if jsonl_path is not None:
+                record = sample_record(
+                    snapshot,
+                    event="start" if first else "sample",
+                    run_id=run_id,
+                    pid=os.getpid(),
+                )
+                with jsonl_path.open("a", encoding="utf-8") as handle:
+                    handle.write(
+                        json.dumps(record, default=_json_default, ensure_ascii=False)
+                        + "\n"
+                    )
+            if args.json:
+                _print_json(snapshot)
+            else:
+                if not first and sys.stdout.isatty():
+                    print("\033[2J\033[H", end="")
+                print(render_text(snapshot), flush=True)
+            if not args.watch:
+                return
+            first = False
+            time.sleep(args.interval)
+    except KeyboardInterrupt:
+        return
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Canada Java ATS discovery engine")
     parser.add_argument("--database", help="SQLite path (defaults to ATS_FINDER_DB)")
@@ -168,6 +239,36 @@ def _parser() -> argparse.ArgumentParser:
     status.add_argument("status", choices=[item.value for item in ApplicationStatus])
 
     commands.add_parser("support-report", help="separate support and scan outcomes")
+
+    monitor = commands.add_parser(
+        "monitor",
+        help="read-only scan progress, rate, ETA, and failure telemetry",
+    )
+    monitor.add_argument(
+        "--window-minutes",
+        type=float,
+        default=15.0,
+        help="rolling window used for the throughput rate (default: 15)",
+    )
+    monitor.add_argument(
+        "--stall-seconds",
+        type=float,
+        default=300.0,
+        help="warn when no scan completed for this long (default: 300)",
+    )
+    monitor.add_argument("--watch", action="store_true", help="refresh until interrupted")
+    monitor.add_argument(
+        "--interval", type=float, default=30.0, help="refresh seconds with --watch (default: 30)"
+    )
+    monitor.add_argument("--json", action="store_true", help="emit JSON instead of text")
+    monitor.add_argument(
+        "--jsonl", metavar="PATH", help="append every sample as one JSON line"
+    )
+    monitor.add_argument(
+        "--history",
+        metavar="PATH",
+        help="summarize a saved telemetry JSONL file and exit",
+    )
     return parser
 
 
@@ -198,6 +299,8 @@ def main() -> None:
         _print_json(job)
     elif args.command == "support-report":
         _support_report(settings)
+    elif args.command == "monitor":
+        _monitor_command(args, settings, parser)
     else:  # pragma: no cover - argparse enforces a known subcommand.
         parser.error(f"unknown command {args.command}")
 

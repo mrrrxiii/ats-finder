@@ -81,15 +81,19 @@ class RespectfulHTTPClient:
         if not host:
             raise ValueError(f"Request URL has no host: {url!r}")
         lock = await self._lock_for(host)
+        interval = self.settings.per_host_interval_seconds
+        # Reserve the next start slot for this host under the lock, then release
+        # it before sleeping or calling the network. Holding the lock for the
+        # whole round trip would serialize requests to a host end to end and cap
+        # throughput at 1 / (latency + interval) instead of 1 / interval.
         async with lock:
-            elapsed = self._monotonic() - self._last_request.get(host, float("-inf"))
-            delay = self.settings.per_host_interval_seconds - elapsed
-            if delay > 0:
-                await self._sleep(delay)
-            try:
-                return await self._client.get(url, params=params, headers=headers)
-            finally:
-                self._last_request[host] = self._monotonic()
+            now = self._monotonic()
+            scheduled = max(now, self._last_request.get(host, float("-inf")) + interval)
+            self._last_request[host] = scheduled
+        delay = scheduled - now
+        if delay > 0:
+            await self._sleep(delay)
+        return await self._client.get(url, params=params, headers=headers)
 
     async def get(
         self,
