@@ -14,6 +14,7 @@ from typing import Final
 
 
 UTC: Final = timezone.utc
+REMOVED_PROVIDERS: Final = frozenset({"smartrecruiters"})
 
 
 def utc_now() -> datetime:
@@ -47,6 +48,12 @@ class SourceLastScanResult(StrEnum):
     SUCCESS = "SUCCESS"
     FAILED = "FAILED"
     INCOMPLETE = "INCOMPLETE"
+
+
+class CanadaPresence(StrEnum):
+    UNKNOWN = "UNKNOWN"
+    SOME = "SOME"
+    NONE = "NONE"
 
 
 class WorkplaceType(StrEnum):
@@ -155,6 +162,7 @@ class ATSSource:
     career_page_url: str
     support_status: SourceSupportStatus
     support_reason: str | None
+    canada_presence: CanadaPresence
     last_successful_scan_at: datetime | None
     last_attempted_scan_at: datetime | None
     last_scan_result: SourceLastScanResult
@@ -242,6 +250,7 @@ class LocationDecision:
 class EnginePolicy:
     recent_window: timedelta = timedelta(hours=24)
     snapshot_max_gap: timedelta = timedelta(hours=24)
+    no_canada_recheck: timedelta = timedelta(days=30)
     verified_publication_retention: timedelta = timedelta(days=60)
     retention_delete_batch_size: int = 500
     stale_source_after: timedelta | None = None
@@ -256,6 +265,8 @@ class EnginePolicy:
             raise ValueError("recent_window must be positive")
         if self.snapshot_max_gap <= timedelta(0):
             raise ValueError("snapshot_max_gap must be positive")
+        if self.no_canada_recheck <= timedelta(0):
+            raise ValueError("no_canada_recheck must be positive")
         if self.verified_publication_retention <= timedelta(0):
             raise ValueError("verified_publication_retention must be positive")
         if self.retention_delete_batch_size <= 0:

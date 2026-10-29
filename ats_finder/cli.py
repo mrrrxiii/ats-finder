@@ -18,7 +18,13 @@ from ats_finder.config import Settings
 from ats_finder.db import Database
 from ats_finder.engine import ScanEngine
 from ats_finder.importer import download_dataset, import_payload, load_local_dataset
-from ats_finder.models import ApplicationStatus, SourceInput, SourceSupportStatus
+from ats_finder.models import (
+    ApplicationStatus,
+    CanadaPresence,
+    EnginePolicy,
+    SourceInput,
+    SourceSupportStatus,
+)
 from ats_finder.monitor import (
     collect_snapshot,
     monitoring_session,
@@ -129,6 +135,10 @@ def _recent(args: argparse.Namespace, settings: Settings) -> None:
 def _support_report(settings: Settings) -> None:
     with Database(settings.database_path) as database:
         sources = database.list_sources()
+        excluded = {
+            (row["provider"].casefold(), row["board_identifier"])
+            for row in database.list_source_exclusions()
+        }
     report: dict[str, dict[str, int]] = {}
     for source in sources:
         provider = report.setdefault(
@@ -137,11 +147,18 @@ def _support_report(settings: Settings) -> None:
                 "supported": 0,
                 "unsupported": 0,
                 "unknown": 0,
+                "excluded": 0,
+                "no_canada": 0,
                 "failed": 0,
                 "incomplete": 0,
             },
         )
+        if (source.provider.casefold(), source.board_identifier) in excluded:
+            provider["excluded"] += 1
+            continue
         provider[source.support_status.value.casefold()] += 1
+        if source.canada_presence is CanadaPresence.NONE:
+            provider["no_canada"] += 1
         if source.last_scan_result.value == "FAILED":
             provider["failed"] += 1
         elif source.last_scan_result.value == "INCOMPLETE":
@@ -238,6 +255,27 @@ def _parser() -> argparse.ArgumentParser:
     status.add_argument("job_id", type=int)
     status.add_argument("status", choices=[item.value for item in ApplicationStatus])
 
+    exclude = commands.add_parser(
+        "exclude-source",
+        help="exclude one board from every future scan and import",
+    )
+    exclude.add_argument("provider")
+    exclude.add_argument("board_identifier")
+    exclude.add_argument("--reason", default="Excluded by operator")
+
+    include = commands.add_parser(
+        "include-source", help="remove a board exclusion"
+    )
+    include.add_argument("provider")
+    include.add_argument("board_identifier")
+
+    commands.add_parser("list-exclusions", help="list operator-excluded boards")
+
+    commands.add_parser(
+        "classify-canada-presence",
+        help="classify boards from active jobs and defer no-Canada boards",
+    )
+
     commands.add_parser("support-report", help="separate support and scan outcomes")
 
     monitor = commands.add_parser(
@@ -297,6 +335,34 @@ def main() -> None:
                 args.job_id, ApplicationStatus(args.status)
             )
         _print_json(job)
+    elif args.command == "exclude-source":
+        with Database(settings.database_path) as database:
+            exclusion = database.add_source_exclusion(
+                args.provider, args.board_identifier, args.reason
+            )
+        _print_json(exclusion)
+    elif args.command == "include-source":
+        with Database(settings.database_path) as database:
+            removed = database.remove_source_exclusion(
+                args.provider, args.board_identifier
+            )
+        _print_json(
+            {
+                "provider": args.provider,
+                "board_identifier": args.board_identifier,
+                "removed": removed,
+            }
+        )
+    elif args.command == "list-exclusions":
+        with Database(settings.database_path) as database:
+            exclusions = database.list_source_exclusions()
+        _print_json(exclusions)
+    elif args.command == "classify-canada-presence":
+        with Database(settings.database_path) as database:
+            classified = database.classify_canada_presence(
+                recheck_after=EnginePolicy().no_canada_recheck
+            )
+        _print_json(classified)
     elif args.command == "support-report":
         _support_report(settings)
     elif args.command == "monitor":

@@ -12,6 +12,7 @@ import threading
 from .models import (
     ATSSource,
     ApplicationStatus,
+    CanadaPresence,
     CoverageStats,
     DiscoveryType,
     JobObservation,
@@ -20,6 +21,7 @@ from .models import (
     LocationMatch,
     ObservationStatus,
     PublicationSemantics,
+    REMOVED_PROVIDERS,
     ScanRun,
     ScanStatus,
     SourceInput,
@@ -31,8 +33,8 @@ from .models import (
 )
 
 
-SCHEMA_VERSION = 3
-_UPGRADABLE_SCHEMA_VERSIONS = frozenset({1, 2})
+SCHEMA_VERSION = 5
+_UPGRADABLE_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4})
 
 
 def datetime_to_storage(value: datetime | None) -> str | None:
@@ -129,6 +131,7 @@ class Database:
                     career_page_url TEXT NOT NULL,
                     support_status TEXT NOT NULL DEFAULT 'UNKNOWN',
                     support_reason TEXT,
+                    canada_presence TEXT NOT NULL DEFAULT 'UNKNOWN',
                     last_successful_scan_at TEXT,
                     last_attempted_scan_at TEXT,
                     last_scan_result TEXT NOT NULL DEFAULT 'NOT_SCANNED',
@@ -294,6 +297,15 @@ class Database:
                     change_kind TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS source_exclusions (
+                    id INTEGER PRIMARY KEY,
+                    provider TEXT NOT NULL COLLATE NOCASE,
+                    board_identifier TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    excluded_at TEXT NOT NULL,
+                    UNIQUE (provider, board_identifier)
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_sources_schedule
                     ON ats_sources(next_scan_at, priority, id);
                 CREATE INDEX IF NOT EXISTS idx_scans_source_status_end
@@ -403,6 +415,18 @@ class Database:
                         f"{existing_version}; expected one of "
                         f"{sorted(_UPGRADABLE_SCHEMA_VERSIONS | {SCHEMA_VERSION})}"
                     )
+                if existing_version < 5:
+                    columns = {
+                        column["name"]
+                        for column in self._connection.execute(
+                            "PRAGMA table_info(ats_sources)"
+                        )
+                    }
+                    if "canada_presence" not in columns:
+                        self._connection.execute(
+                            "ALTER TABLE ats_sources "
+                            "ADD COLUMN canada_presence TEXT NOT NULL DEFAULT 'UNKNOWN'"
+                        )
                 if existing_version == 1:
                     self._backfill_audit_tables()
                 self._connection.execute(
@@ -524,6 +548,10 @@ class Database:
 
     def upsert_source(self, source: SourceInput, *, now: datetime | None = None) -> ATSSource:
         timestamp = as_utc(now) if now is not None else utc_now()
+        if source.provider.casefold() in REMOVED_PROVIDERS:
+            raise ValueError(
+                f"provider {source.provider!r} has been removed from this project"
+            )
         imported_at = source.imported_at
         if imported_at is None and any(
             value is not None
@@ -595,6 +623,13 @@ class Database:
         timestamp = as_utc(now) if now is not None else utc_now()
         timestamp_value = datetime_to_storage(timestamp)
         parameters: list[tuple[object, ...]] = []
+        sources = [
+            source
+            for source in sources
+            if source.provider.casefold() not in REMOVED_PROVIDERS
+        ]
+        if not sources:
+            return 0
         for source in sources:
             if not isinstance(source, SourceInput):
                 raise TypeError("sources must contain only SourceInput instances")
@@ -720,6 +755,211 @@ class Database:
         assert row is not None
         return self._source_from_row(row)
 
+    def add_source_exclusion(
+        self,
+        provider: str,
+        board_identifier: str,
+        reason: str | None = None,
+        *,
+        now: datetime | None = None,
+    ) -> dict[str, object]:
+        """Persist an operator exclusion for one board identity.
+
+        The exclusion is stored independently of ``ats_sources`` so it survives
+        a dataset re-import or deletion of the source row. Re-adding the same
+        identity updates its reason and timestamp.
+        """
+
+        normalized_provider = (provider or "").strip()
+        normalized_board = (board_identifier or "").strip()
+        if not normalized_provider:
+            raise ValueError("provider must not be blank")
+        if normalized_provider.casefold() in REMOVED_PROVIDERS:
+            raise ValueError(
+                f"provider {normalized_provider!r} has been removed from this project"
+            )
+        if not normalized_board:
+            raise ValueError("board_identifier must not be blank")
+        normalized_reason = (reason or "").strip() or "Excluded by operator"
+        timestamp = as_utc(now) if now is not None else utc_now()
+        with self.transaction() as connection:
+            connection.execute(
+                """
+                INSERT INTO source_exclusions (
+                    provider, board_identifier, reason, excluded_at
+                ) VALUES (?, ?, ?, ?)
+                ON CONFLICT(provider, board_identifier) DO UPDATE SET
+                    reason = excluded.reason,
+                    excluded_at = excluded.excluded_at
+                """,
+                (
+                    normalized_provider,
+                    normalized_board,
+                    normalized_reason,
+                    datetime_to_storage(timestamp),
+                ),
+            )
+            row = connection.execute(
+                """
+                SELECT * FROM source_exclusions
+                WHERE provider = ? AND board_identifier = ?
+                """,
+                (normalized_provider, normalized_board),
+            ).fetchone()
+        assert row is not None
+        return dict(row)
+
+    def remove_source_exclusion(self, provider: str, board_identifier: str) -> bool:
+        """Delete an exclusion and report whether a row was removed."""
+
+        with self.transaction() as connection:
+            cursor = connection.execute(
+                """
+                DELETE FROM source_exclusions
+                WHERE provider = ? AND board_identifier = ?
+                """,
+                ((provider or "").strip(), (board_identifier or "").strip()),
+            )
+        return cursor.rowcount == 1
+
+    def list_source_exclusions(self) -> list[dict[str, object]]:
+        with self.read() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM source_exclusions
+                ORDER BY excluded_at DESC, id DESC
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_source_exclusion(
+        self, provider: str, board_identifier: str
+    ) -> dict[str, object] | None:
+        with self.read() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM source_exclusions
+                WHERE provider = ? AND board_identifier = ?
+                """,
+                ((provider or "").strip(), (board_identifier or "").strip()),
+            ).fetchone()
+        return None if row is None else dict(row)
+
+    def is_source_excluded(self, provider: str, board_identifier: str) -> bool:
+        return self.get_source_exclusion(provider, board_identifier) is not None
+
+    def classify_canada_presence(
+        self,
+        *,
+        now: datetime | None = None,
+        recheck_after: timedelta,
+    ) -> dict[str, int]:
+        """Classify supported boards from their current active jobs.
+
+        A board with active jobs but no CONFIRMED or REVIEW_LOCATION job is
+        marked NONE and its next scan is scheduled ``recheck_after`` after its
+        last attempt. Repeated runs therefore do not extend an existing
+        deferral. Empty boards keep their existing presence so a prior NONE
+        result is not erased and a never-classified board stays UNKNOWN on the
+        normal schedule.
+        """
+
+        if recheck_after <= timedelta(0):
+            raise ValueError("recheck_after must be positive")
+        timestamp = as_utc(now) if now is not None else utc_now()
+        updated_at = datetime_to_storage(timestamp)
+        with self.transaction() as connection:
+            connection.execute(
+                """
+                CREATE TEMP TABLE IF NOT EXISTS _ats_finder_presence (
+                    source_id INTEGER PRIMARY KEY,
+                    job_count INTEGER NOT NULL,
+                    canadian_jobs INTEGER NOT NULL
+                )
+                """
+            )
+            connection.execute("DELETE FROM _ats_finder_presence")
+            connection.execute(
+                """
+                INSERT INTO _ats_finder_presence (
+                    source_id, job_count, canadian_jobs
+                )
+                SELECT s.id, COUNT(j.id),
+                       COALESCE(SUM(
+                           CASE WHEN j.location_match IN ('CONFIRMED', 'REVIEW_LOCATION')
+                                THEN 1 ELSE 0 END
+                       ), 0)
+                FROM ats_sources AS s
+                LEFT JOIN jobs AS j
+                  ON j.source_id = s.id AND j.current_state = 'ACTIVE'
+                WHERE s.support_status = 'SUPPORTED'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM source_exclusions AS e
+                      WHERE e.provider = s.provider
+                        AND e.board_identifier = s.board_identifier
+                  )
+                GROUP BY s.id
+                """
+            )
+            some = connection.execute(
+                """
+                UPDATE ats_sources
+                SET canada_presence = 'SOME', updated_at = ?
+                WHERE id IN (
+                    SELECT source_id FROM _ats_finder_presence
+                    WHERE job_count > 0 AND canadian_jobs > 0
+                )
+                """,
+                (updated_at,),
+            ).rowcount
+            none = connection.execute(
+                """
+                UPDATE ats_sources
+                SET canada_presence = 'NONE', updated_at = ?
+                WHERE id IN (
+                    SELECT source_id FROM _ats_finder_presence
+                    WHERE job_count > 0 AND canadian_jobs = 0
+                )
+                """,
+                (updated_at,),
+            ).rowcount
+            unknown_row = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM _ats_finder_presence AS p
+                JOIN ats_sources AS s ON s.id = p.source_id
+                WHERE p.job_count = 0 AND s.canada_presence = 'UNKNOWN'
+                """
+            ).fetchone()
+            unknown = int(unknown_row["count"])
+            recheck_rows = connection.execute(
+                """
+                SELECT id, last_attempted_scan_at, last_successful_scan_at,
+                       next_scan_at
+                FROM ats_sources
+                WHERE canada_presence = 'NONE'
+                """
+            ).fetchall()
+            for row in recheck_rows:
+                base = (
+                    datetime_from_storage(row["last_attempted_scan_at"])
+                    or datetime_from_storage(row["last_successful_scan_at"])
+                    or timestamp
+                )
+                due = base + recheck_after
+                current = datetime_from_storage(row["next_scan_at"])
+                if current is None or current < due:
+                    connection.execute(
+                        """
+                        UPDATE ats_sources
+                        SET next_scan_at = ?, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (datetime_to_storage(due), updated_at, row["id"]),
+                    )
+            connection.execute("DELETE FROM _ats_finder_presence")
+        return {"some": some, "none": none, "unknown": unknown}
+
     def get_source(self, source_id: int) -> ATSSource | None:
         with self.read() as connection:
             row = connection.execute("SELECT * FROM ats_sources WHERE id = ?", (source_id,)).fetchone()
@@ -758,9 +998,24 @@ class Database:
 
         clauses: list[str] = []
         parameters: list[object] = []
+        removed_providers = sorted(REMOVED_PROVIDERS)
+        clauses.append(
+            "provider NOT IN (" + ", ".join("?" for _ in removed_providers) + ")"
+        )
+        parameters.extend(removed_providers)
         if selected_status is not None:
             clauses.append("support_status = ?")
             parameters.append(SourceSupportStatus(selected_status).value)
+        if (
+            selected_status is not None
+            and SourceSupportStatus(selected_status) is SourceSupportStatus.SUPPORTED
+        ):
+            clauses.append(
+                "NOT EXISTS ("
+                "SELECT 1 FROM source_exclusions AS e "
+                "WHERE e.provider = ats_sources.provider "
+                "AND e.board_identifier = ats_sources.board_identifier)"
+            )
         if due_at is not None:
             due_at = as_utc(due_at)
             clauses.append("(next_scan_at IS NULL OR next_scan_at <= ?)")
@@ -1081,11 +1336,14 @@ class Database:
                 """
                 SELECT
                     COUNT(*) AS imported,
-                    SUM(CASE WHEN last_successful_scan_at IS NOT NULL THEN 1 ELSE 0 END) AS successful,
-                    SUM(CASE WHEN last_scan_result = 'FAILED' THEN 1 ELSE 0 END) AS failed,
-                    SUM(CASE WHEN last_scan_result = 'INCOMPLETE' THEN 1 ELSE 0 END) AS incomplete,
-                    SUM(CASE WHEN last_scan_result = 'NOT_SCANNED' THEN 1 ELSE 0 END) AS not_scanned
-                FROM ats_sources
+                    SUM(CASE WHEN e.id IS NULL AND s.last_successful_scan_at IS NOT NULL THEN 1 ELSE 0 END) AS successful,
+                    SUM(CASE WHEN e.id IS NULL AND s.last_scan_result = 'FAILED' THEN 1 ELSE 0 END) AS failed,
+                    SUM(CASE WHEN e.id IS NULL AND s.last_scan_result = 'INCOMPLETE' THEN 1 ELSE 0 END) AS incomplete,
+                    SUM(CASE WHEN e.id IS NULL AND s.last_scan_result = 'NOT_SCANNED' THEN 1 ELSE 0 END) AS not_scanned
+                FROM ats_sources AS s
+                LEFT JOIN source_exclusions AS e
+                  ON e.provider = s.provider
+                 AND e.board_identifier = s.board_identifier
                 """
             ).fetchone()
             job_counts = connection.execute(
@@ -1111,9 +1369,14 @@ class Database:
                 stale_row = connection.execute(
                     """
                     SELECT COUNT(*) AS count
-                    FROM ats_sources
-                    WHERE last_successful_scan_at IS NOT NULL
-                      AND last_successful_scan_at < ?
+                    FROM ats_sources AS s
+                    WHERE s.last_successful_scan_at IS NOT NULL
+                      AND s.last_successful_scan_at < ?
+                      AND NOT EXISTS (
+                          SELECT 1 FROM source_exclusions AS e
+                          WHERE e.provider = s.provider
+                            AND e.board_identifier = s.board_identifier
+                      )
                     """,
                     (datetime_to_storage(cutoff),),
                 ).fetchone()
@@ -1160,6 +1423,7 @@ class Database:
             career_page_url=row["career_page_url"],
             support_status=SourceSupportStatus(row["support_status"]),
             support_reason=row["support_reason"],
+            canada_presence=CanadaPresence(row["canada_presence"]),
             last_successful_scan_at=datetime_from_storage(row["last_successful_scan_at"]),
             last_attempted_scan_at=datetime_from_storage(row["last_attempted_scan_at"]),
             last_scan_result=SourceLastScanResult(row["last_scan_result"]),

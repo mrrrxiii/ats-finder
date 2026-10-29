@@ -49,6 +49,8 @@ class Settings:
     max_retries: int = 3
     backoff_base_seconds: float = 0.5
     per_host_interval_seconds: float = 0.25
+    rate_limit_cooldown_seconds: float = 60.0
+    workable_request_interval_seconds: float = 1.0
     max_pages: int = 1000
     lever_page_size: int = 100
     user_agent: str = "CanadaJavaATSFinder/1.0 (+respectful public job-board monitor)"
@@ -67,6 +69,12 @@ class Settings:
             max_retries=_env_int("ATS_FINDER_MAX_RETRIES", 3, 1),
             backoff_base_seconds=_env_float("ATS_FINDER_BACKOFF_BASE_SECONDS", 0.5, 0.0),
             per_host_interval_seconds=_env_float("ATS_FINDER_PER_HOST_INTERVAL_SECONDS", 0.25, 0.0),
+            rate_limit_cooldown_seconds=_env_float(
+                "ATS_FINDER_RATE_LIMIT_COOLDOWN_SECONDS", 60.0, 0.0
+            ),
+            workable_request_interval_seconds=_env_float(
+                "ATS_FINDER_WORKABLE_INTERVAL_SECONDS", 1.0, 0.0
+            ),
             max_pages=_env_int("ATS_FINDER_MAX_PAGES", 1000, 1),
             lever_page_size=_env_int("ATS_FINDER_LEVER_PAGE_SIZE", 100, 1),
             user_agent=os.getenv(

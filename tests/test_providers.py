@@ -20,10 +20,6 @@ from ats_finder.providers.ashby import parse_ashby_job
 from ats_finder.providers.base import PaginationError, ProviderParseError
 from ats_finder.providers.greenhouse import parse_greenhouse_job
 from ats_finder.providers.lever import LeverAdapter, parse_lever_job
-from ats_finder.providers.smartrecruiters import (
-    SmartRecruitersAdapter,
-    parse_smartrecruiters_job,
-)
 from ats_finder.providers.workable import WorkableAdapter, parse_workable_job
 
 from conftest import FIXED_NOW, EngineHarness
@@ -198,78 +194,11 @@ def test_lever_adapter_rejects_unproven_completion_at_page_limit(
         asyncio.run(LeverAdapter().fetch(source, client, settings))
 
 
-def _smart_detail(provider_job_id: str) -> dict[str, object]:
-    return {
-        "id": provider_job_id,
-        "name": "Java Platform Engineer",
-        "postingUrl": f"https://jobs.smartrecruiters.com/Acme/{provider_job_id}",
-        "applyUrl": f"https://jobs.smartrecruiters.com/Acme/{provider_job_id}/apply",
-        "active": True,
-        "releasedDate": "2026-10-27T14:30:00Z",
-        "company": {"name": "Acme Canada"},
-        "location": {"city": "Remote", "country": "Canada", "remote": True},
-        "jobAd": {
-            "sections": {
-                "jobDescription": {
-                    "title": "The role",
-                    "text": "<p>Build Java services.</p>",
-                },
-                "qualifications": {
-                    "title": "Qualifications",
-                    "text": "Java 17 experience",
-                },
-            }
-        },
-    }
-
-
-def test_smartrecruiters_parses_documented_release_time() -> None:
-    job = parse_smartrecruiters_job(
-        _smart_detail("smart-1"), fallback_company="Fallback"
-    )
-
-    assert job.provider_job_id == "smart-1"
-    assert job.company == "Acme Canada"
-    assert job.workplace_type is WorkplaceType.REMOTE
-    assert job.canada_remote_eligibility is True
-    assert job.publication_semantics is PublicationSemantics.ATS_PUBLISHED_AT
-    assert job.publication_is_verified is True
-    assert "Build Java services" in job.description
-
-
-class _SmartClient:
-    def __init__(self, *, change_total: bool = False) -> None:
-        self.change_total = change_total
-        self.calls: list[str] = []
-
-    async def get(
-        self,
-        url: str,
-        *,
-        params: dict[str, Any] | None = None,
-        headers: dict[str, str] | None = None,
-    ) -> _JSONResponse:
-        del headers
-        self.calls.append(url)
-        if params is not None:
-            offset = int(params["offset"])
-            total = 3 if self.change_total and offset else 2
-            content = (
-                [
-                    {"id": "smart-1", "releasedDate": "2026-10-27T14:30:00Z"},
-                    {"id": "smart-2", "releasedDate": "2026-10-27T14:30:00Z"},
-                ]
-                if offset == 0
-                else []
-            )
-            return _JSONResponse(
-                {"limit": 100, "offset": offset, "totalFound": total, "content": content}
-            )
-        return _JSONResponse(_smart_detail(url.rsplit("/", 1)[-1]))
-
-
 def _provider_source(
-    harness: EngineHarness, provider: str, board_identifier: str, url: str
+    harness: EngineHarness,
+    provider: str,
+    board_identifier: str,
+    url: str,
 ):
     return harness.database.upsert_source(
         SourceInput(
@@ -281,25 +210,6 @@ def _provider_source(
         ),
         now=FIXED_NOW,
     )
-
-
-def test_smartrecruiters_adapter_validates_total_and_fetches_every_detail(
-    harness: EngineHarness,
-) -> None:
-    source = _provider_source(
-        harness,
-        "smartrecruiters",
-        "Acme",
-        "https://jobs.smartrecruiters.com/Acme",
-    )
-    client = _SmartClient()
-    result = asyncio.run(
-        SmartRecruitersAdapter().fetch(source, client, Settings(max_pages=2))
-    )
-
-    assert [job.provider_job_id for job in result.jobs] == ["smart-1", "smart-2"]
-    assert result.request_count == 3
-    assert result.provider_metadata["reported_total"] == 2
 
 
 def _workable_item(shortcode: str) -> dict[str, object]:
@@ -334,9 +244,11 @@ class _WorkableClient:
         *,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        min_interval: float | None = None,
     ) -> _JSONResponse:
-        assert url.endswith("/api/accounts/acme")
+        assert url == "https://apply.workable.com/api/v1/widget/accounts/acme"
         assert params == {"details": "true"}
+        assert min_interval == 1.0
         del headers
         return _JSONResponse(
             {"name": "Acme Canada", "jobs": [_workable_item("ABC123")]}

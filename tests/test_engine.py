@@ -11,6 +11,7 @@ from ats_finder.engine import ScanEngine
 from ats_finder.filters import classify_location, has_excluded_title, matches_java
 from ats_finder.models import (
     ApplicationStatus,
+    CanadaPresence,
     DiscoveryType,
     EnginePolicy,
     JobState,
@@ -730,9 +731,17 @@ def test_java_word_boundary_rejects_javascript_only(
         ("Java Architect", True),
         ("Java Architecture Team Engineer", False),
         ("Java Architectural Tooling Engineer", False),
+        ("Lead Java Engineer", True),
+        ("Team Lead - Java Platform", True),
+        ("Java Engineering Leader", True),
+        ("LEADER, Java Platform", True),
+        ("Leading Java Engineer", True),
+        ("Java Leadership Platform", True),
+        ("Lead Generation Specialist (Java)", True),
+        ("Java Team Leads", True),
     ],
 )
-def test_excluded_title_words_are_case_insensitive_whole_words(
+def test_excluded_title_patterns_are_case_insensitive(
     title: str,
     expected: bool,
 ) -> None:
@@ -771,6 +780,72 @@ def test_explicit_canada_remote_locations_are_eligible(location: str) -> None:
     assert decision.workplace_type is WorkplaceType.REMOTE
     assert decision.canada_remote_eligibility is True
     assert decision.reason == "canada_remote_explicit"
+
+
+def test_incidental_canada_team_mention_does_not_confirm_argentina_remote() -> None:
+    decision = classify_location(
+        "Argentina",
+        "This is an independent contractor engagement in Argentina. "
+        "Location: Argentina (remote). "
+        "Working model: Collaboration with a distributed, US & Canada-based "
+        "team with reasonable availability for coordination with Greenhouse "
+        "stakeholders. We are a remote-first company.",
+        WorkplaceType.REMOTE,
+    )
+
+    assert decision.match is LocationMatch.REVIEW_LOCATION
+    assert decision.reason == "remote_eligibility_ambiguous"
+    assert decision.canada_remote_eligibility is None
+
+
+def test_multi_location_remote_canada_is_confirmed() -> None:
+    decision = classify_location(
+        "Remote - UK or North Macedonia; Office - KS - Prishtina; "
+        "Office - MK - Skopje; Office - UK - Belfast; Remote - Canada",
+        "This position is open to applicants across all of the UK, Canada "
+        "and North Macedonia on a remote basis.",
+        WorkplaceType.REMOTE,
+    )
+
+    assert decision.match is LocationMatch.CONFIRMED
+    assert decision.reason == "canada_remote_explicit"
+    assert decision.canada_remote_eligibility is True
+
+
+def test_open_to_canadian_applicants_is_confirmed_when_location_is_generic() -> None:
+    decision = classify_location(
+        "Remote",
+        "This role is open to candidates located in Canada.",
+        WorkplaceType.REMOTE,
+    )
+
+    assert decision.match is LocationMatch.CONFIRMED
+    assert decision.reason == "canada_remote_explicit"
+    assert decision.canada_remote_eligibility is True
+
+
+def test_remote_and_canada_in_the_location_list_is_confirmed() -> None:
+    decision = classify_location(
+        "Remote; EMEA; Canada",
+        workplace_type=WorkplaceType.REMOTE,
+    )
+
+    assert decision.match is LocationMatch.CONFIRMED
+    assert decision.reason == "canada_remote_explicit"
+    assert decision.canada_remote_eligibility is True
+
+
+def test_remote_us_with_incidental_canada_team_is_not_confirmed() -> None:
+    decision = classify_location(
+        "Remote - US",
+        "Our distributed team includes people across the US & Canada. "
+        "We are a remote-first company.",
+        WorkplaceType.REMOTE,
+    )
+
+    assert decision.match is LocationMatch.REVIEW_LOCATION
+    assert decision.reason == "remote_eligibility_ambiguous"
+    assert decision.canada_remote_eligibility is None
 
 
 def test_structured_canada_remote_eligibility_is_accepted() -> None:
@@ -943,4 +1018,67 @@ def test_duplicate_ids_in_one_claimed_complete_snapshot_are_rejected_atomically(
 
     assert harness.database.list_scan_runs(source_id=harness.source.id) == []
     assert harness.database.list_jobs(source_id=harness.source.id) == []
+
+
+def test_non_canadian_complete_scan_is_deferred_for_30_days(
+    harness: EngineHarness,
+    job_factory: JobFactory,
+) -> None:
+    harness.engine.process_complete_scan(
+        harness.source.id,
+        [job_factory("job-1", location="Paris, France")],
+        completed_at=FIXED_NOW,
+        next_scan_at=FIXED_NOW + timedelta(hours=1),
+    )
+
+    source = harness.database.get_source(harness.source.id)
+
+    assert source is not None
+    assert source.canada_presence is CanadaPresence.NONE
+    assert source.next_scan_at == FIXED_NOW + timedelta(days=30)
+
+
+def test_ambiguous_remote_complete_scan_keeps_normal_schedule(
+    harness: EngineHarness,
+    job_factory: JobFactory,
+) -> None:
+    next_scan = FIXED_NOW + timedelta(hours=1)
+    harness.engine.process_complete_scan(
+        harness.source.id,
+        [
+            job_factory(
+                "job-1",
+                location="Remote",
+                workplace_type=WorkplaceType.REMOTE,
+            )
+        ],
+        completed_at=FIXED_NOW,
+        next_scan_at=next_scan,
+    )
+
+    source = harness.database.get_source(harness.source.id)
+
+    assert source is not None
+    assert source.canada_presence is CanadaPresence.SOME
+    assert source.next_scan_at == next_scan
+
+
+def test_empty_complete_scan_keeps_presence_unknown_and_normal_schedule(
+    harness: EngineHarness,
+) -> None:
+    next_scan = FIXED_NOW + timedelta(hours=1)
+    harness.engine.process_complete_scan(
+        harness.source.id,
+        [],
+        completed_at=FIXED_NOW,
+        next_scan_at=next_scan,
+    )
+
+    source = harness.database.get_source(harness.source.id)
+
+    assert source is not None
+    assert source.canada_presence is CanadaPresence.UNKNOWN
+    assert source.next_scan_at == next_scan
+
+
 

@@ -7,16 +7,13 @@ from dataclasses import dataclass
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit, urlunsplit
 
 
-SUPPORTED_PROVIDERS = frozenset(
-    {"greenhouse", "lever", "ashby", "smartrecruiters", "workable"}
-)
+SUPPORTED_PROVIDERS = frozenset({"greenhouse", "lever", "ashby", "workable"})
 
 _PLATFORM_NAMES = {
     "greenhouse": "greenhouse",
     "lever": "lever",
     "ashby": "ashby",
     "workday": "workday",
-    "smartrecruiters": "smartrecruiters",
     "workable": "workable",
     "bamboohr": "bamboohr",
     "rippling": "rippling",
@@ -77,6 +74,8 @@ def _provider_from_host(host: str, platform: str) -> str:
     if host == "jobs.ashbyhq.com":
         return "ashby"
     if host in {"jobs.smartrecruiters.com", "careers.smartrecruiters.com"}:
+        # Removed provider. Recognise the host so the importer can suppress
+        # the row instead of storing it as an anonymous unsupported board.
         return "smartrecruiters"
     if host == "apply.workable.com":
         return "workable"
@@ -112,12 +111,6 @@ def _extract_supported_identity(provider: str, canonical_url: str) -> tuple[str,
             raise ValueError("Ashby URL has no job-board name")
         board = segments[0]
         return board, _humanize(board)
-
-    if provider == "smartrecruiters":
-        if not segments:
-            raise ValueError("SmartRecruiters URL has no company identifier")
-        identifier = segments[0]
-        return identifier, _humanize(identifier)
 
     if provider == "workable":
         if not segments:

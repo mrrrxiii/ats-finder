@@ -11,3 +11,6 @@ data/*.jsonl*
 exports/
 .streamlit/secrets.toml
 
+# Runtime logs
+*.log
+

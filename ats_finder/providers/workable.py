@@ -154,12 +154,13 @@ class WorkableAdapter:
         client: RespectfulAsyncClient,
         settings: Settings,
     ) -> FetchResult:
-        del settings
         subdomain = self._subdomain(source)
         response = await client.get(
-            f"https://www.workable.com/api/accounts/{quote(subdomain, safe='')}",
+            "https://apply.workable.com/api/v1/widget/accounts/"
+            f"{quote(subdomain, safe='')}",
             params={"details": "true"},
             headers={"Accept": "application/json"},
+            min_interval=settings.workable_request_interval_seconds,
         )
         try:
             payload: Any = response.json()

@@ -18,11 +18,10 @@ Runtime scan outcomes remain separate:
 | Greenhouse | [Job Board API](https://docs.greenhouse.io/job-board): one complete `/jobs?content=true` response; require `meta.total == len(jobs)`. Prospect posts with null `internal_job_id` are counted for completeness but excluded as non-position records. | Relevant candidates may use documented detail `first_published`, stored as `ORIGINAL_PUBLICATION`. `updated_at` is never used. A detail failure only removes optional timestamp evidence; it does not turn a complete list into an empty/partial snapshot. | `greenhouse` |
 | Lever | [Postings API](https://github.com/lever/postings-api): global and EU `skip`/`limit` pagination; stop only on a short page, reject repeated IDs, and enforce the configured page ceiling. | The documented response contract has no publication timestamp. Undocumented `createdAt` is deliberately ignored. Snapshot comparison only. | `leverdemo` |
 | Ashby | [Public Job Postings API](https://developers.ashbyhq.com/docs/public-job-posting-api): one response containing all currently published postings; require API version `1`, stable URL/response identity agreement, and unique IDs; exclude `isListed=false`. | `publishedAt` is documented as when the job was **last published**, so it is stored as `REPUBLICATION`, not original creation. | `Ashby` |
-| SmartRecruiters | [Public Posting API list](https://developers.smartrecruiters.com/reference/v1listpostings) plus [posting objects](https://developers.smartrecruiters.com/docs/objects): request only `PUBLIC` postings, hold `totalFound` stable across offset pages, reject duplicates/early termination, then validate every detail record. | `releasedDate` is documented as the date a posting was released. Because the public contract does not distinguish first release from later release, it is stored conservatively as `ATS_PUBLISHED_AT`. | `JLIConsulting` |
 | Workable | [Public account jobs API](https://workable.readme.io/reference/jobs-1): one documented account response containing its public jobs with `details=true`; require valid account/jobs shapes and unique shortcodes. | `published_on` is a date without a documented time or timezone. It is validated but not converted to midnight or used for a rolling 24-hour claim. `created_at` and `updated_at` are not publication evidence. Snapshot comparison only. | `clickview` |
 
 On 2026-10-28, the opt-in bounded integration suite completed successfully for
-all five rows above: **5 passed**. The tests assert a certified complete result,
+all four rows above: **4 passed**. The tests assert a certified complete result,
 at least one request, and unique stable job identifiers; they do not assert a
 board-specific minimum job count because a valid public board may be empty.
 
@@ -64,15 +63,16 @@ After URL normalization and provider/board identity deduplication:
 
 | Import result | Count |
 |---|---:|
-| Unique stored sources | 69,610 |
-| Supported sources | 36,384 |
-| Unsupported sources | 33,226 |
+| Parsed unique sources | 69,610 |
+| Supported stored sources | 35,659 |
+| Unsupported stored sources | 33,226 |
+| Removed-provider rows skipped | 725 |
 | Malformed rows | 0 |
 
 Supported-source counts in that import were Greenhouse 14,335, Lever 8,540,
-Ashby 5,709, Workable 7,075, and SmartRecruiters 725. Dataset inclusion is not a
-live-scan success claim; individual boards can subsequently be failed,
-incomplete, or never scanned.
+Ashby 5,709, and Workable 7,075. Dataset inclusion is not a live-scan success
+claim; individual boards can subsequently be failed, incomplete, or never
+scanned.
 
 The dataset card currently shows an example filename different from the actual
 repository file. The importer uses the verified repository filename

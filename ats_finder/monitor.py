@@ -153,6 +153,25 @@ def collect_snapshot(
             ).fetchone()
             schema_version = int(metadata["value"]) if metadata is not None else None
 
+            # Older databases may not have the exclusion table yet. The monitor
+            # is read-only and never migrates, so only apply the filter when the
+            # schema actually provides it.
+            has_exclusions = (
+                connection.execute(
+                    "SELECT 1 FROM sqlite_master "
+                    "WHERE type = 'table' AND name = 'source_exclusions'"
+                ).fetchone()
+                is not None
+            )
+            exclusion_clause = ""
+            if has_exclusions:
+                exclusion_clause = (
+                    " AND NOT EXISTS ("
+                    "SELECT 1 FROM source_exclusions AS e "
+                    "WHERE e.provider = ats_sources.provider "
+                    "AND e.board_identifier = ats_sources.board_identifier)"
+                )
+
             totals = connection.execute(
                 """
                 SELECT COUNT(*) AS runs,
@@ -166,7 +185,7 @@ def collect_snapshot(
             ).fetchone()
 
             provider_rows = connection.execute(
-                """
+                f"""
                 SELECT provider,
                        COUNT(*) AS total,
                        SUM(CASE WHEN last_scan_result != 'NOT_SCANNED' THEN 1 ELSE 0 END) AS attempted,
@@ -175,6 +194,7 @@ def collect_snapshot(
                        SUM(CASE WHEN last_scan_result = 'INCOMPLETE' THEN 1 ELSE 0 END) AS incomplete
                 FROM ats_sources
                 WHERE support_status = 'SUPPORTED'
+                {exclusion_clause}
                 GROUP BY provider
                 ORDER BY total DESC, provider
                 """
@@ -641,6 +661,7 @@ def start_monitor_recorder(
     log_path = settings.monitor_log_path
     if log_path is None:
         return None
+    (logger or LOGGER).info("telemetry starting -> %s", log_path)
     try:
         recorder = MonitorRecorder(
             settings.database_path,

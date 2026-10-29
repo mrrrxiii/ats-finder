@@ -157,6 +157,8 @@ def test_snapshot_reports_progress_rates_and_failures(tmp_path: Path) -> None:
     assert top.by_provider == (("ashby", 1),)
 
 
+
+
 def test_snapshot_is_read_only_and_renderable(tmp_path: Path) -> None:
     database = _build_database(tmp_path / "monitor.sqlite3")
     try:
@@ -388,5 +390,26 @@ def test_history_flags_runs_without_a_stop_sample(tmp_path: Path) -> None:
     assert "boards scanned +4" in text
     assert "stalled samples 1" in text
     assert "no stop sample (still running or killed)" in text
+
+
+def test_snapshot_excludes_operator_excluded_boards(tmp_path: Path) -> None:
+    path = tmp_path / "excluded-monitor.sqlite3"
+    database = Database(path)
+    try:
+        database.bulk_upsert_sources(
+            [
+                _source("ashby", "acme", SourceSupportStatus.SUPPORTED),
+                _source("ashby", "beta", SourceSupportStatus.SUPPORTED),
+            ]
+        )
+        database.add_source_exclusion("ashby", "beta", "not suitable")
+    finally:
+        database.close()
+
+    snapshot = collect_snapshot(path)
+
+    assert snapshot.supported_total == 1
+    assert snapshot.supported_attempted == 0
+    assert snapshot.supported_remaining == 1
 
 

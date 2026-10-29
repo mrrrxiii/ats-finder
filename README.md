@@ -5,10 +5,10 @@ Ottawa area or explicitly remote-eligible from Canada. It monitors official
 public ATS boards, stores complete snapshots in SQLite, and keeps verified
 publication time separate from first observation time.
 
-The application supports Greenhouse, Lever, Ashby, SmartRecruiters, and
-Workable. Every other imported ATS remains visible as `UNSUPPORTED`; it is not
-silently dropped or presented as covered. See [ATS support](docs/ATS_SUPPORT.md)
-for provider-specific evidence and completeness rules.
+The application supports Greenhouse, Lever, Ashby, and Workable. Every other
+imported ATS remains visible as `UNSUPPORTED`; it is not silently dropped or
+presented as covered. See [ATS support](docs/ATS_SUPPORT.md) for
+provider-specific evidence and completeness rules.
 
 ## What counts as a recent result
 
@@ -131,7 +131,24 @@ The optional global `--database` argument must precede the subcommand:
   --json --jsonl /tmp/ats-scan-progress.jsonl
 .venv/bin/ats-finder monitor --history /tmp/ats-scan-progress.jsonl
 .venv/bin/ats-finder --database /tmp/demo.sqlite3 set-status 1 APPLIED
+.venv/bin/ats-finder --database /tmp/demo.sqlite3 exclude-source greenhouse example-company \
+  --reason "not suitable for this search"
+.venv/bin/ats-finder --database /tmp/demo.sqlite3 list-exclusions
+.venv/bin/ats-finder --database /tmp/demo.sqlite3 classify-canada-presence
+.venv/bin/ats-finder --database /tmp/demo.sqlite3 include-source greenhouse example-company
 ```
+
+Operator exclusions are stored in SQLite by `(provider, board_identifier)`. An
+excluded board is never selected by the scheduler, is not counted as pending
+scan work, and `scan-source` refuses to fetch it. `import-sources` skips
+excluded identities entirely, so an excluded board is not re-created and its
+source row can remain deleted.
+
+Boards whose active jobs contain no Canadian location are marked
+`canada_presence=NONE` after a complete scan and rechecked monthly instead of
+hourly. Empty boards keep the normal interval. `classify-canada-presence`
+backfills that classification from the current active jobs for boards scanned
+before the policy existed.
 
 ### Initial-scan telemetry
 
@@ -189,9 +206,14 @@ audited.
   whose verified publication or snapshot detection falls inside that window are
   listed. Clicking a table row or choosing from the "Job detail" picker selects
   that exact job, and the selection survives while new results stream in.
-- **Scan Coverage** separates supported, unsupported, failed, incomplete,
-  never-scanned, and stale sources. It reports observed scan frequency and job
-  evidence totals.
+- **Scan Coverage** separates supported, unsupported, operator-excluded, failed,
+  incomplete, never-scanned, and stale sources. It reports observed scan
+  frequency and job evidence totals, plus a progress panel with two percentages
+  measured over supported boards only: **Coverage** (scanned successfully at
+  least once, which only rises) and **Fresh within stale window** (usable right
+  now, which falls when scanning lags). Unsupported ATS types and
+  operator-excluded boards are excluded from both because they can never or
+  must never be fetched.
 - **Job History** shows first/last observation, removal/reappearance/repost
   state, every scan observation, immutable content versions, and application
   status history, with CSV export.
@@ -212,6 +234,13 @@ latency, rate limits, retries, and configured concurrency.
   incremental checkpoint.
 - On restart, the worker reads persisted `next_scan_at` and last-attempt state.
 - Repeated board failures back off up to 32 scan intervals.
+- A complete snapshot with active jobs but no Canadian location is marked
+  `canada_presence=NONE` and deferred for 30 days. Empty boards keep the normal
+  interval so a newly populated board is still discovered promptly.
+- SmartRecruiters first scans inspect every list page before detail fetching. If
+  no summary can be Canadian or location-unknown, the run is recorded as
+  `SKIPPED_NO_CANADA`, has `pagination_complete=0`, and never replaces the
+  complete-snapshot baseline.
 - Fair ordering combines configured priority with unbounded overdue age, so a
   low-priority due board eventually outranks repeatedly scanned boards.
 - SQLite WAL mode, immediate write transactions, stable composite identities,

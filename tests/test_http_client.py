@@ -3,9 +3,10 @@ from __future__ import annotations
 import asyncio
 
 import httpx
+import pytest
 
 from ats_finder.config import Settings
-from ats_finder.http_client import RespectfulHTTPClient
+from ats_finder.http_client import HostRateLimited, RespectfulHTTPClient
 
 
 def test_same_host_requests_overlap_in_flight() -> None:
@@ -75,3 +76,72 @@ def test_same_host_start_times_are_spaced_by_interval() -> None:
     assert len(sleeps) == 3
     assert all(delay == 0.25 for delay in sleeps)
     assert clock["now"] == 0.75
+
+
+def test_429_fails_fast_and_sets_a_shared_host_cooldown() -> None:
+    calls = 0
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            429,
+            headers={"Retry-After": "2"},
+            request=request,
+        )
+
+    async def run() -> None:
+        settings = Settings(
+            per_host_interval_seconds=0.0,
+            max_retries=3,
+            rate_limit_cooldown_seconds=2.0,
+        )
+        async with RespectfulHTTPClient(
+            settings,
+            transport=httpx.MockTransport(respond),
+        ) as client:
+            with pytest.raises(HostRateLimited) as first:
+                await client.get("https://api.example.com/jobs")
+            assert first.value.retry_after == 2.0
+            with pytest.raises(HostRateLimited):
+                await client.get("https://api.example.com/jobs")
+
+    asyncio.run(run())
+    # The first 429 sets the host cooldown and is not retried. The second
+    # request fails fast without sending another HTTP request.
+    assert calls == 1
+
+
+def test_per_request_min_interval_is_honored() -> None:
+    clock = {"now": 0.0}
+    sleeps: list[float] = []
+
+    def monotonic() -> float:
+        return clock["now"]
+
+    async def sleeper(delay: float) -> None:
+        sleeps.append(delay)
+        clock["now"] += delay
+
+    async def run() -> None:
+        settings = Settings(per_host_interval_seconds=0.0)
+        async with RespectfulHTTPClient(
+            settings,
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, json={}, request=request)
+            ),
+            sleeper=sleeper,
+            monotonic=monotonic,
+        ) as client:
+            await client.get(
+                "https://apply.workable.com/api/v1/widget/accounts/acme",
+                min_interval=1.0,
+            )
+            await client.get(
+                "https://apply.workable.com/api/v1/widget/accounts/acme",
+                min_interval=1.0,
+            )
+
+    asyncio.run(run())
+    assert sleeps == [1.0]
+    assert clock["now"] == 1.0

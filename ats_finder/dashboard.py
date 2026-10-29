@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Iterable
 
@@ -255,6 +256,11 @@ def _coverage_rows(database: Database, now: datetime, stale_after: timedelta) ->
         rows = connection.execute(
             """
             SELECT s.*,
+                   EXISTS (
+                       SELECT 1 FROM source_exclusions AS e
+                       WHERE e.provider = s.provider
+                         AND e.board_identifier = s.board_identifier
+                   ) AS is_excluded,
                    COUNT(CASE WHEN r.completion_status = 'SUCCESS' THEN 1 END) AS successful_runs,
                    MIN(CASE WHEN r.completion_status = 'SUCCESS' THEN r.ended_at END) AS first_success,
                    MAX(CASE WHEN r.completion_status = 'SUCCESS' THEN r.ended_at END) AS latest_success
@@ -278,6 +284,8 @@ def _coverage_rows(database: Database, now: datetime, stale_after: timedelta) ->
                 "Company": row["company"],
                 "ATS": str(row["provider"]).title(),
                 "Support": row["support_status"],
+                "Excluded": bool(row["is_excluded"]),
+                "Canada Presence": row["canada_presence"],
                 "Latest Result": row["last_scan_result"],
                 "Last Successful Scan": latest,
                 "Successful Scans": successes,
@@ -289,6 +297,71 @@ def _coverage_rows(database: Database, now: datetime, stale_after: timedelta) ->
             }
         )
     return _frame(rendered)
+
+
+@dataclass(frozen=True)
+class CoverageProgress:
+    """Scan completeness of the supported board set, plus its current freshness."""
+
+    supported: int
+    covered: int
+    attempted: int
+    failing: int
+    fresh: int
+
+    @property
+    def coverage_ratio(self) -> float:
+        """Share of supported boards with at least one successful scan."""
+
+        if not self.supported:
+            return 0.0
+        return self.covered / self.supported
+
+    @property
+    def fresh_ratio(self) -> float:
+        """Share of supported boards whose last success is inside the stale window."""
+
+        if not self.supported:
+            return 0.0
+        return self.fresh / self.supported
+
+
+def coverage_progress(
+    frame: pd.DataFrame, *, now: datetime, stale_after: timedelta
+) -> CoverageProgress:
+    """Measure how much of the supported board set is scanned and still current.
+
+    Unsupported ATS types, operator-excluded boards, and boards deferred by the
+    no-Canada policy are excluded from every count: they can never, must never,
+    or are intentionally not being fetched at the normal interval, so counting
+    them would cap the percentage below 100% permanently.
+    A board counts as covered once one scan succeeded, and stays fresh only
+    while that success is newer than the stale window, which is why coverage
+    rises monotonically while freshness falls whenever scanning lags.
+    """
+
+    if frame.empty:
+        return CoverageProgress(supported=0, covered=0, attempted=0, failing=0, fresh=0)
+    supported = frame[
+        (frame["Support"] == SourceSupportStatus.SUPPORTED.value)
+        & (~frame["Excluded"].astype(bool))
+        & (frame["Canada Presence"] != "NONE")
+    ]
+    latest_success = supported["Last Successful Scan"]
+    results = supported["Latest Result"]
+    cutoff = now - stale_after
+    fresh = sum(
+        1
+        for value in latest_success
+        if isinstance(value, datetime) and value >= cutoff
+    )
+    return CoverageProgress(
+        supported=len(supported),
+        covered=int(latest_success.notna().sum()),
+        attempted=int((results != SourceLastScanResult.NOT_SCANNED.value).sum()),
+        failing=int((results == SourceLastScanResult.FAILED.value).sum()),
+        fresh=fresh,
+    )
 
 
 def coverage_page(database: Database, settings: Settings) -> None:
@@ -319,13 +392,79 @@ def coverage_page(database: Database, settings: Settings) -> None:
     if frame.empty:
         st.info("No ATS sources have been imported yet.")
         return
-    tabs = st.tabs(["Supported", "Unsupported", "Failed", "Incomplete", "Stale"])
+
+    progress = coverage_progress(frame, now=now, stale_after=stale_after)
+    st.subheader("Scan progress")
+    if not progress.supported:
+        st.info(
+            "No supported ATS boards have been imported, so there is no progress "
+            "to measure. Unsupported boards are listed in their own tab."
+        )
+    else:
+        stale_hours = settings.stale_after_seconds / 3600
+        columns = st.columns(3)
+        columns[0].metric(
+            "Coverage",
+            f"{progress.coverage_ratio:.1%}",
+            help=(
+                "Supported boards scanned successfully at least once, divided by "
+                "supported boards that are neither operator-excluded nor deferred by "
+                "the no-Canada policy. This cannot decrease and reaches 100% when "
+                "the first full pass finishes."
+            ),
+        )
+        columns[1].metric(
+            "Supported boards covered",
+            f"{progress.covered:,} of {progress.supported:,}",
+        )
+        columns[2].metric(
+            "Fresh within stale window",
+            f"{progress.fresh_ratio:.1%}",
+            help=(
+                f"Supported boards whose last success is newer than {stale_hours:g} "
+                "hours. This falls when scanning cannot keep up with the interval, "
+                "so it reports how much of the coverage is usable right now."
+            ),
+        )
+        st.progress(
+            progress.coverage_ratio,
+            text=(
+                f"{progress.covered:,} of {progress.supported:,} eligible supported "
+                "boards scanned successfully at least once"
+            ),
+        )
+        st.caption(
+            f"{progress.attempted:,} of {progress.supported:,} eligible supported "
+            f"boards have been attempted and {progress.failing:,} currently report "
+            "FAILED. Unsupported ATS types, operator-excluded boards, and no-Canada "
+            "boards deferred to a monthly recheck are excluded from all three figures "
+            "because they cannot or should not be fetched at the normal interval."
+        )
+
+    excluded = frame["Excluded"].astype(bool)
+    no_canada = frame["Canada Presence"] == "NONE"
+    tabs = st.tabs(
+        [
+            "Supported",
+            "Unsupported",
+            "Excluded",
+            "No Canada",
+            "Failed",
+            "Incomplete",
+            "Stale",
+        ]
+    )
     filters = [
-        frame[frame["Support"] == SourceSupportStatus.SUPPORTED.value],
-        frame[frame["Support"] == SourceSupportStatus.UNSUPPORTED.value],
-        frame[frame["Latest Result"] == SourceLastScanResult.FAILED.value],
-        frame[frame["Latest Result"] == SourceLastScanResult.INCOMPLETE.value],
-        frame[frame["Stale"] == True],  # noqa: E712 - pandas vector comparison
+        frame[(frame["Support"] == SourceSupportStatus.SUPPORTED.value) & ~excluded],
+        frame[(frame["Support"] == SourceSupportStatus.UNSUPPORTED.value) & ~excluded],
+        frame[excluded],
+        frame[no_canada & ~excluded],
+        frame[(frame["Latest Result"] == SourceLastScanResult.FAILED.value) & ~excluded],
+        frame[
+            (frame["Latest Result"] == SourceLastScanResult.INCOMPLETE.value)
+            & ~excluded
+        ],
+        frame[(frame["Stale"] == True) & ~excluded],  # noqa: E712 - pandas vector comparison
     ]
     for tab, subset in zip(tabs, filters, strict=True):
         with tab:

@@ -10,7 +10,7 @@ from urllib.parse import quote, urlsplit
 from ats_finder.config import Settings
 from ats_finder.db import Database
 from ats_finder.http_client import RespectfulHTTPClient
-from ats_finder.models import SourceInput, SourceSupportStatus
+from ats_finder.models import REMOVED_PROVIDERS, SourceInput, SourceSupportStatus
 from ats_finder.sources import parse_dataset_csv
 
 
@@ -30,6 +30,8 @@ class DatasetPayload:
 
 @dataclass(frozen=True, slots=True)
 class ImportReport:
+    """Dataset-level counts plus rows suppressed by operator policy."""
+
     unique_sources: int
     supported_sources: int
     unsupported_sources: int
@@ -37,6 +39,8 @@ class ImportReport:
     source_revision: str
     source_sha256: str
     errors: tuple[str, ...]
+    excluded_sources: int = 0
+    removed_sources: int = 0
 
 
 def dataset_url(revision: str = "main") -> str:
@@ -119,8 +123,12 @@ def import_payload(
     )
     supported = 0
     unsupported = 0
+    removed = 0
     source_inputs: list[SourceInput] = []
     for candidate in candidates:
+        if candidate.provider.casefold() in REMOVED_PROVIDERS:
+            removed += 1
+            continue
         status = SourceSupportStatus(candidate.support_status.upper())
         supported += status is SourceSupportStatus.SUPPORTED
         unsupported += status is SourceSupportStatus.UNSUPPORTED
@@ -141,7 +149,17 @@ def import_payload(
                 imported_at=observed_at,
             )
         )
-    database.bulk_upsert_sources(source_inputs, now=observed_at)
+    excluded_identities = {
+        (row["provider"].casefold(), row["board_identifier"])
+        for row in database.list_source_exclusions()
+    }
+    stored_inputs = [
+        source_input
+        for source_input in source_inputs
+        if (source_input.provider.casefold(), source_input.board_identifier)
+        not in excluded_identities
+    ]
+    database.bulk_upsert_sources(stored_inputs, now=observed_at)
     return ImportReport(
         unique_sources=len(candidates),
         supported_sources=supported,
@@ -150,5 +168,7 @@ def import_payload(
         source_revision=payload.revision,
         source_sha256=payload.sha256,
         errors=tuple(errors),
+        excluded_sources=len(source_inputs) - len(stored_inputs),
+        removed_sources=removed,
     )
 

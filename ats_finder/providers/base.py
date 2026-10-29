@@ -52,5 +52,6 @@ class RespectfulAsyncClient(Protocol):
         *,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        min_interval: float | None = None,
     ) -> httpx.Response: ...
 

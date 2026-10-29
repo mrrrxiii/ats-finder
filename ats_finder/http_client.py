@@ -16,6 +16,17 @@ from ats_finder.config import Settings
 _RETRYABLE_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
 
 
+class HostRateLimited(httpx.HTTPError):
+    """The host asked us to pause; this request was not retried."""
+
+    def __init__(self, host: str, retry_after: float) -> None:
+        self.host = host
+        self.retry_after = retry_after
+        super().__init__(
+            f"host {host} is rate limited; retry after {retry_after:.1f}s"
+        )
+
+
 def _retry_after_seconds(value: str | None, now: datetime | None = None) -> float | None:
     if value is None:
         return None
@@ -55,6 +66,7 @@ class RespectfulHTTPClient:
         )
         self._host_locks: dict[str, asyncio.Lock] = {}
         self._last_request: dict[str, float] = {}
+        self._blocked_until: dict[str, float] = {}
         self._map_lock = asyncio.Lock()
 
     async def __aenter__(self) -> "RespectfulHTTPClient":
@@ -76,19 +88,29 @@ class RespectfulHTTPClient:
         *,
         params: dict[str, Any] | None,
         headers: dict[str, str] | None,
+        min_interval: float | None,
     ) -> httpx.Response:
         host = (urlsplit(url).hostname or "").casefold()
         if not host:
             raise ValueError(f"Request URL has no host: {url!r}")
         lock = await self._lock_for(host)
-        interval = self.settings.per_host_interval_seconds
+        interval = max(
+            self.settings.per_host_interval_seconds,
+            min_interval or 0.0,
+        )
         # Reserve the next start slot for this host under the lock, then release
         # it before sleeping or calling the network. Holding the lock for the
         # whole round trip would serialize requests to a host end to end and cap
         # throughput at 1 / (latency + interval) instead of 1 / interval.
         async with lock:
             now = self._monotonic()
-            scheduled = max(now, self._last_request.get(host, float("-inf")) + interval)
+            blocked_until = self._blocked_until.get(host, float("-inf"))
+            if now < blocked_until:
+                raise HostRateLimited(host, blocked_until - now)
+            scheduled = max(
+                now,
+                self._last_request.get(host, float("-inf")) + interval,
+            )
             self._last_request[host] = scheduled
         delay = scheduled - now
         if delay > 0:
@@ -101,22 +123,44 @@ class RespectfulHTTPClient:
         *,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        min_interval: float | None = None,
     ) -> httpx.Response:
         last_error: Exception | None = None
         for attempt in range(self.settings.max_retries + 1):
             try:
-                response = await self._send_once(url, params=params, headers=headers)
+                response = await self._send_once(
+                    url,
+                    params=params,
+                    headers=headers,
+                    min_interval=min_interval,
+                )
                 if response.status_code not in _RETRYABLE_STATUS:
                     response.raise_for_status()
                     return response
-                if attempt == self.settings.max_retries:
-                    response.raise_for_status()
+                if response.status_code == 429:
+                    retry_after = _retry_after_seconds(
+                        response.headers.get("Retry-After")
+                    )
+                    cooldown = max(
+                        retry_after or 0.0,
+                        self.settings.rate_limit_cooldown_seconds,
+                    )
+                    host = (urlsplit(url).hostname or "").casefold()
+                    lock = await self._lock_for(host)
+                    async with lock:
+                        self._blocked_until[host] = max(
+                            self._blocked_until.get(host, float("-inf")),
+                            self._monotonic() + cooldown,
+                        )
+                    raise HostRateLimited(host, cooldown)
                 retry_after = _retry_after_seconds(response.headers.get("Retry-After"))
                 delay = (
                     retry_after
                     if retry_after is not None
                     else self.settings.backoff_base_seconds * (2**attempt)
                 )
+                if attempt == self.settings.max_retries:
+                    response.raise_for_status()
                 if delay:
                     await self._sleep(delay)
             except (httpx.TimeoutException, httpx.TransportError) as exc:

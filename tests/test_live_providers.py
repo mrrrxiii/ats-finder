@@ -32,12 +32,6 @@ LIVE_BOARDS = (
         "https://jobs.ashbyhq.com/Ashby",
     ),
     (
-        "smartrecruiters",
-        "JLI Consulting",
-        "JLIConsulting",
-        "https://jobs.smartrecruiters.com/JLIConsulting",
-    ),
-    (
         "workable",
         "ClickView",
         "clickview",

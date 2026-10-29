@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from time import monotonic
@@ -14,12 +15,16 @@ from ats_finder.engine import ScanEngine
 from ats_finder.http_client import RespectfulHTTPClient
 from ats_finder.models import (
     ATSSource,
+    REMOVED_PROVIDERS,
     ScanOutcome,
     ScanStatus,
     SourceSupportStatus,
 )
 from ats_finder.providers import ADAPTERS
 from ats_finder.providers.base import FetchResult, ProviderError
+
+
+LOGGER = logging.getLogger("ats_finder.scanner")
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +34,10 @@ class ScanAttempt:
     request_count: int
     elapsed_seconds: float
     warnings: tuple[str, ...] = ()
+
+
+class SourceExcludedError(ValueError):
+    """A selected source became excluded before its scan started."""
 
 
 class BoardScanner:
@@ -76,6 +85,16 @@ class BoardScanner:
             source = self.database.get_source(source_id)
             if source is None:
                 raise KeyError(f"unknown source id {source_id}")
+            if source.provider.casefold() in REMOVED_PROVIDERS:
+                raise SourceExcludedError(
+                    f"provider {source.provider!r} has been removed from this project"
+                )
+            if self.database.is_source_excluded(
+                source.provider, source.board_identifier
+            ):
+                raise SourceExcludedError(
+                    f"source {source_id} is excluded by operator policy"
+                )
             if source.support_status is not SourceSupportStatus.SUPPORTED:
                 raise ValueError(f"source {source_id} is not supported")
             adapter = ADAPTERS.get(source.provider.casefold())
@@ -84,6 +103,12 @@ class BoardScanner:
                     f"source {source_id} is marked supported but has no {source.provider!r} adapter"
                 )
 
+            LOGGER.info(
+                "scan start source=%s provider=%s company=%s",
+                source.id,
+                source.provider,
+                source.company,
+            )
             started_at = self._now().astimezone(timezone.utc)
             timer = monotonic()
             request_count = 0
@@ -173,9 +198,7 @@ class BoardScanner:
             raise ValueError("limit must be positive")
         sources = [
             source
-            for source in self.database.list_sources(
-                support_status=SourceSupportStatus.SUPPORTED
-            )
+            for source in self.database.list_sources(supported_only=True)
             if source.next_scan_at is None or source.next_scan_at <= current
         ]
 
@@ -204,6 +227,7 @@ class BoardScanner:
         due = self.fair_due_sources(limit=limit)
         if not due:
             return []
+        LOGGER.info("scanning %d due sources", len(due))
         results = await asyncio.gather(
             *(self.scan_source(source.id) for source in due),
             return_exceptions=True,
@@ -211,6 +235,8 @@ class BoardScanner:
         attempts: list[ScanAttempt] = []
         unexpected: list[BaseException] = []
         for result in results:
+            if isinstance(result, SourceExcludedError):
+                continue
             if isinstance(result, BaseException):
                 unexpected.append(result)
             else:

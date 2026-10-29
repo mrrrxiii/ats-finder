@@ -59,18 +59,11 @@ def test_url_canonicalization_is_deterministic() -> None:
 
 
 def test_additional_verified_provider_urls_extract_stable_board_identifiers() -> None:
-    smart = source_candidate(
-        "https://jobs.smartrecruiters.com/AcmeCanada/",
-        "SmartRecruiters",
-    )
     workable = source_candidate(
         "https://apply.workable.com/acme-canada/?lng=en",
         "Workable",
     )
 
-    assert smart.provider == "smartrecruiters"
-    assert smart.board_identifier == "AcmeCanada"
-    assert smart.support_status == "supported"
     assert workable.provider == "workable"
     assert workable.board_identifier == "acme-canada"
     assert workable.support_status == "supported"
@@ -148,4 +141,82 @@ def test_dataset_download_records_resolved_commit_header() -> None:
         assert payload.sha256 == hashlib.sha256(content).hexdigest()
 
     asyncio.run(run())
+
+
+def test_operator_exclusion_survives_a_dataset_reimport(tmp_path: Path) -> None:
+    content = """canonical_url,ats_platform
+https://boards.greenhouse.io/acme,Greenhouse
+"""
+    payload = DatasetPayload(
+        text=content,
+        request_url="https://huggingface.co/requested-fixture.csv",
+        resolved_url="https://huggingface.co/resolved-fixture.csv",
+        revision="fixture-commit-sha",
+        sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+    )
+    database = Database(tmp_path / "excluded.sqlite3")
+    try:
+        exclusion = database.add_source_exclusion(
+            "greenhouse",
+            "acme",
+            "not suitable",
+            now=FIXED_NOW,
+        )
+        assert exclusion["reason"] == "not suitable"
+
+        report = import_payload(database, payload, imported_at=FIXED_NOW)
+        assert report.unique_sources == 1
+        assert report.supported_sources == 1
+        assert report.excluded_sources == 1
+
+        assert database.get_source_by_board("greenhouse", "acme") is None
+        assert database.list_sources() == []
+        assert database.is_source_excluded("greenhouse", "acme")
+
+        assert (
+            database.remove_source_exclusion("greenhouse", "acme")
+            is True
+        )
+        second = import_payload(database, payload, imported_at=FIXED_NOW)
+        assert second.excluded_sources == 0
+        source = database.get_source_by_board("greenhouse", "acme")
+        assert source is not None
+        assert [
+            item.id for item in database.list_sources(supported_only=True)
+        ] == [source.id]
+    finally:
+        database.close()
+
+
+def test_import_payload_skips_removed_providers(tmp_path: Path) -> None:
+    content = """canonical_url,ats_platform
+https://boards.greenhouse.io/acme,Greenhouse
+https://jobs.smartrecruiters.com/AcmeCanada,SmartRecruiters
+"""
+    payload = DatasetPayload(
+        text=content,
+        request_url="https://huggingface.co/requested-fixture.csv",
+        resolved_url="https://huggingface.co/resolved-fixture.csv",
+        revision="fixture-commit-sha",
+        sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+    )
+    database = Database(tmp_path / "removed.sqlite3")
+    try:
+        report = import_payload(database, payload, imported_at=FIXED_NOW)
+
+        assert report.unique_sources == 2
+        assert report.supported_sources == 1
+        assert report.removed_sources == 1
+        assert report.excluded_sources == 0
+        assert [source.provider for source in database.list_sources()] == [
+            "greenhouse"
+        ]
+        with database.read() as connection:
+            stored = connection.execute(
+                "SELECT COUNT(*) FROM ats_sources "
+                "WHERE provider = 'smartrecruiters'"
+            ).fetchone()[0]
+        assert stored == 0
+    finally:
+        database.close()
 

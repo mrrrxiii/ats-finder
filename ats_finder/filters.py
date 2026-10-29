@@ -15,8 +15,10 @@ _EXCLUDED_TITLE_RE = re.compile(
     r"(?<!\w)(?:staff|principle|principal|manager|architect)(?!\w)",
     re.IGNORECASE,
 )
+_LEAD_TITLE_RE = re.compile(r"lead", re.IGNORECASE)
 
 _OTTAWA_RE = re.compile(r"\b(?:ottawa|kanata|stittsville)\b", re.IGNORECASE)
+_CANADA_LOCATION_RE = re.compile(r"\b(?:canada|canadian|ontario)\b", re.IGNORECASE)
 _REMOTE_RE = re.compile(
     r"\b(?:remote|work(?:ing)?\s+from\s+home|home[- ]based|telecommut(?:e|ing))\b",
     re.IGNORECASE,
@@ -36,12 +38,43 @@ _CANADA_EXCLUDED_RE = re.compile(
 )
 
 _CANADA_REMOTE_PATTERNS = (
-    re.compile(r"\bremote\b.{0,60}\b(?:canada|canadian|ontario)\b", re.IGNORECASE),
-    re.compile(r"\b(?:canada|canadian|ontario)\b.{0,60}\bremote\b", re.IGNORECASE),
+    # Location-style adjacency: "Remote - Canada", "Remote (Canada)",
+    # "Remote Ontario", "Remote from Canada". Incidental phrases such as
+    # "remote) Working model: ... US & Canada-based team" do not match.
+    re.compile(
+        r"\bremote\b\s*[-,–—(|/)]?\s*(?:in|from|within|across)?\s*"
+        r"(?:canada|canadian|ontario)\b",
+        re.IGNORECASE,
+    ),
+    # Reverse location-style: "Canada (Remote)", "Canada - Remote".
+    re.compile(
+        r"\b(?:canada|canadian|ontario)\b\s*[-,–—(|/)]?\s*remote\b",
+        re.IGNORECASE,
+    ),
     re.compile(r"\banywhere\s+(?:within|in|across)\s+canada\b", re.IGNORECASE),
     re.compile(r"\bwork(?:ing)?\s+from\s+(?:anywhere\s+in\s+)?canada\b", re.IGNORECASE),
     re.compile(r"\bcanada[- ]wide\b", re.IGNORECASE),
-    re.compile(r"\bcanada\s*\(\s*remote\s*\)", re.IGNORECASE),
+    # Eligibility language, not a mere team or customer mention.
+    re.compile(
+        r"\bopen\s+to\s+(?:applicants|candidates|anyone|people)\b"
+        r".{0,80}\b(?:canada|canadian|ontario)\b",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    re.compile(
+        r"\b(?:hiring|recruiting)\b.{0,40}\b(?:in|across|within)\s+"
+        r"(?:canada|canadian|ontario)\b",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    re.compile(
+        r"\b(?:must|required)\s+(?:be\s+)?(?:reside|live|be\s+located)\s+in\s+"
+        r"(?:canada|canadian|ontario)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:authori[sz]ed|eligible)\s+to\s+work\s+in\s+"
+        r"(?:canada|canadian|ontario)\b",
+        re.IGNORECASE,
+    ),
 )
 
 _US_ONLY_RE = re.compile(
@@ -85,9 +118,13 @@ def matches_java(title: str | None, description: str | None) -> bool:
 
 
 def has_excluded_title(title: str | None) -> bool:
-    """Return whether a title contains an excluded seniority/management word."""
+    """Exclude seniority/management words and any title containing "lead"."""
 
-    return bool(_EXCLUDED_TITLE_RE.search(plain_text(title)))
+    title_text = plain_text(title)
+    return bool(
+        _EXCLUDED_TITLE_RE.search(title_text)
+        or _LEAD_TITLE_RE.search(title_text)
+    )
 
 
 def infer_workplace_type(
@@ -182,6 +219,21 @@ def classify_location(
             mode,
             False,
             "europe_or_uk_only_remote",
+        )
+
+    # A location list such as "Remote; EMEA; Canada" is a structured
+    # Canada-remote location. This uses only the location field, so an
+    # incidental "US & Canada team" sentence cannot trigger it.
+    if (
+        mode is WorkplaceType.REMOTE
+        and _REMOTE_RE.search(location_text)
+        and _CANADA_LOCATION_RE.search(location_text)
+    ):
+        return LocationDecision(
+            LocationMatch.CONFIRMED,
+            WorkplaceType.REMOTE,
+            True,
+            "canada_remote_explicit",
         )
 
     if explicit_canada_remote and remote_context:

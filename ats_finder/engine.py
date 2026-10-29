@@ -17,6 +17,7 @@ from .filters import classify_location, has_excluded_title, matches_java, plain_
 from .models import (
     ATSSource,
     ApplicationStatus,
+    CanadaPresence,
     CoverageStats,
     DiscoveryType,
     EnginePolicy,
@@ -529,6 +530,7 @@ class ScanEngine:
         removed_ids: list[str] = []
         reappeared_ids: list[str] = []
         potential_repost_ids: list[str] = []
+        canadian_jobs = 0
 
         with self.database.transaction() as connection:
             source = self._require_source(connection, source_id)
@@ -619,6 +621,11 @@ class ScanEngine:
                     job.workplace_type,
                     job.canada_remote_eligibility,
                 )
+                if decision.match in (
+                    LocationMatch.CONFIRMED,
+                    LocationMatch.REVIEW_LOCATION,
+                ):
+                    canadian_jobs += 1
                 java_match = matches_java(job.title, job.description)
                 evidence = self._resolve_publication_evidence(job, existing)
                 fingerprint = self._content_fingerprint(
@@ -817,18 +824,30 @@ class ScanEngine:
                     row=removed,
                 )
 
+            if not jobs:
+                presence = CanadaPresence.UNKNOWN
+            elif canadian_jobs:
+                presence = CanadaPresence.SOME
+            else:
+                presence = CanadaPresence.NONE
+            effective_next_scan = next_scan_at
+            if presence is CanadaPresence.NONE:
+                effective_next_scan = completed + self.policy.no_canada_recheck
+
             connection.execute(
                 """
                 UPDATE ats_sources
                 SET last_successful_scan_at = ?, last_attempted_scan_at = ?,
                     last_scan_result = 'SUCCESS', consecutive_failures = 0,
-                    next_scan_at = COALESCE(?, next_scan_at), updated_at = ?
+                    canada_presence = ?, next_scan_at = COALESCE(?, next_scan_at),
+                    updated_at = ?
                 WHERE id = ?
                 """,
                 (
                     datetime_to_storage(completed),
                     datetime_to_storage(completed),
-                    datetime_to_storage(next_scan_at),
+                    presence.value,
+                    datetime_to_storage(effective_next_scan),
                     datetime_to_storage(completed),
                     source_id,
                 ),

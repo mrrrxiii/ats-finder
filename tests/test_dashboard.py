@@ -10,12 +10,19 @@ from ats_finder.dashboard import (
     DEFAULT_RECENT_WINDOW,
     JOB_DETAIL_SELECTION_KEY,
     RECENT_WINDOW_OPTIONS,
+    coverage_progress,
     discovery_label,
     evidence_age_label,
     recent_job_row,
     row_pick_job_id,
 )
-from ats_finder.models import DiscoveryType, NormalizedJob, PublicationSemantics
+from ats_finder.models import (
+    DiscoveryType,
+    NormalizedJob,
+    PublicationSemantics,
+    SourceInput,
+    SourceSupportStatus,
+)
 from streamlit.testing.v1 import AppTest
 
 from conftest import FIXED_NOW, EngineHarness
@@ -355,4 +362,197 @@ def test_snapshot_discovery_dashboard_row_never_labels_first_seen_as_published(
     assert row["Published At"] is None
     assert row["First Seen"] == detected_at
     assert row["Previous Board Scan"] == FIXED_NOW
+
+
+def test_coverage_progress_counts_records_only_over_supported_boards() -> None:
+    now = FIXED_NOW
+    frame = pd.DataFrame(
+        [
+            {
+                "Support": SourceSupportStatus.SUPPORTED.value,
+                "Excluded": False,
+                "Canada Presence": "SOME",
+                "Latest Result": "SUCCESS",
+                "Last Successful Scan": now - timedelta(minutes=30),
+            },
+            {
+                "Support": SourceSupportStatus.SUPPORTED.value,
+                "Excluded": False,
+                "Canada Presence": "SOME",
+                "Latest Result": "SUCCESS",
+                "Last Successful Scan": now - timedelta(hours=5),
+            },
+            {
+                "Support": SourceSupportStatus.SUPPORTED.value,
+                "Excluded": False,
+                "Canada Presence": "SOME",
+                "Latest Result": "FAILED",
+                "Last Successful Scan": now - timedelta(days=2),
+            },
+            {
+                "Support": SourceSupportStatus.SUPPORTED.value,
+                "Excluded": False,
+                "Canada Presence": "SOME",
+                "Latest Result": "NOT_SCANNED",
+                "Last Successful Scan": None,
+            },
+            {
+                "Support": SourceSupportStatus.UNSUPPORTED.value,
+                "Excluded": False,
+                "Canada Presence": "SOME",
+                "Latest Result": "NOT_SCANNED",
+                "Last Successful Scan": None,
+            },
+        ]
+    )
+
+    progress = coverage_progress(frame, now=now, stale_after=timedelta(hours=2))
+
+    assert progress.supported == 4
+    assert progress.covered == 3
+    assert progress.attempted == 3
+    assert progress.failing == 1
+    assert progress.fresh == 1
+    assert progress.coverage_ratio == 0.75
+    assert progress.fresh_ratio == 0.25
+
+
+def test_coverage_progress_ignores_operator_excluded_boards() -> None:
+    now = FIXED_NOW
+    frame = pd.DataFrame(
+        [
+            {
+                "Support": SourceSupportStatus.SUPPORTED.value,
+                "Excluded": False,
+                "Canada Presence": "SOME",
+                "Latest Result": "SUCCESS",
+                "Last Successful Scan": now - timedelta(minutes=5),
+            },
+            {
+                "Support": SourceSupportStatus.SUPPORTED.value,
+                "Excluded": True,
+                "Canada Presence": "SOME",
+                "Latest Result": "NOT_SCANNED",
+                "Last Successful Scan": None,
+            },
+        ]
+    )
+
+    progress = coverage_progress(frame, now=now, stale_after=timedelta(hours=2))
+
+    assert progress.supported == 1
+    assert progress.covered == 1
+    assert progress.attempted == 1
+    assert progress.coverage_ratio == 1.0
+    assert progress.fresh_ratio == 1.0
+
+
+def test_coverage_progress_ignores_no_canada_boards() -> None:
+    now = FIXED_NOW
+    frame = pd.DataFrame(
+        [
+            {
+                "Support": SourceSupportStatus.SUPPORTED.value,
+                "Excluded": False,
+                "Canada Presence": "SOME",
+                "Latest Result": "SUCCESS",
+                "Last Successful Scan": now - timedelta(minutes=5),
+            },
+            {
+                "Support": SourceSupportStatus.SUPPORTED.value,
+                "Excluded": False,
+                "Canada Presence": "NONE",
+                "Latest Result": "SUCCESS",
+                "Last Successful Scan": now - timedelta(days=1),
+            },
+        ]
+    )
+
+    progress = coverage_progress(frame, now=now, stale_after=timedelta(hours=2))
+
+    assert progress.supported == 1
+    assert progress.covered == 1
+    assert progress.attempted == 1
+    assert progress.coverage_ratio == 1.0
+    assert progress.fresh_ratio == 1.0
+
+
+def test_coverage_progress_is_zero_without_supported_boards() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "Support": SourceSupportStatus.UNSUPPORTED.value,
+                "Excluded": False,
+                "Canada Presence": "SOME",
+                "Latest Result": "NOT_SCANNED",
+                "Last Successful Scan": None,
+            }
+        ]
+    )
+
+    progress = coverage_progress(frame, now=FIXED_NOW, stale_after=timedelta(hours=2))
+
+    assert progress.supported == 0
+    assert progress.coverage_ratio == 0.0
+    assert progress.fresh_ratio == 0.0
+
+    empty = coverage_progress(
+        pd.DataFrame(), now=FIXED_NOW, stale_after=timedelta(hours=2)
+    )
+    assert empty.supported == 0
+    assert empty.coverage_ratio == 0.0
+
+
+def test_coverage_page_reports_scan_progress_over_supported_boards(
+    monkeypatch,
+    harness: EngineHarness,
+    job_factory: JobFactory,
+) -> None:
+    published = FIXED_NOW - timedelta(hours=1)
+    harness.engine.process_complete_scan(
+        harness.source.id,
+        [
+            job_factory(
+                "java-role",
+                published_at=published,
+                publication_source="Official fixture datePosted field",
+                publication_semantics=PublicationSemantics.ORIGINAL_PUBLICATION,
+                publication_is_verified=True,
+            )
+        ],
+    )
+    harness.database.upsert_source(
+        SourceInput(
+            provider="greenhouse",
+            company="Never Scanned Company",
+            board_identifier="never-scanned-company",
+            career_page_url="https://boards.greenhouse.io/never-scanned-company",
+            support_status=SourceSupportStatus.SUPPORTED,
+        ),
+        now=FIXED_NOW,
+    )
+    harness.database.upsert_source(
+        SourceInput(
+            provider="unsupported-ats",
+            company="Unsupported Company",
+            board_identifier="unsupported-company",
+            career_page_url="https://example.invalid/unsupported-company",
+            support_status=SourceSupportStatus.UNSUPPORTED,
+        ),
+        now=FIXED_NOW,
+    )
+    monkeypatch.setenv("ATS_FINDER_DB", str(harness.path))
+    entry_point = Path(__file__).parents[1] / "streamlit_app.py"
+    app = AppTest.from_file(str(entry_point)).run(timeout=30)
+    app.radio[0].set_value("Scan Coverage").run(timeout=30)
+
+    assert not app.exception
+    metrics = {metric.label: metric.value for metric in app.metric}
+    assert metrics["Coverage"] == "50.0%"
+    assert metrics["Supported boards covered"] == "1 of 2"
+    assert metrics["Fresh within stale window"] == "50.0%"
+    assert app.progress[0].value == 50
+    assert app.progress[0].text == (
+        "1 of 2 eligible supported boards scanned successfully at least once"
+    )
 

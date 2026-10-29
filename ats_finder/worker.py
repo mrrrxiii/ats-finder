@@ -4,7 +4,7 @@ import argparse
 import asyncio
 import logging
 import signal
-from contextlib import ExitStack
+from contextlib import ExitStack, suppress
 from datetime import datetime, timezone
 
 from ats_finder.config import Settings
@@ -21,8 +21,9 @@ async def run_worker(
     *,
     once: bool = False,
     batch_size: int | None = None,
+    stop_event: asyncio.Event | None = None,
 ) -> int:
-    stop = asyncio.Event()
+    stop = stop_event or asyncio.Event()
     loop = asyncio.get_running_loop()
     for event in (signal.SIGINT, signal.SIGTERM):
         try:
@@ -32,35 +33,74 @@ async def run_worker(
 
     completed_scans = 0
     effective_batch = batch_size or max(settings.concurrency * 4, settings.concurrency)
+    LOGGER.info(
+        "worker starting database=%s concurrency=%s batch=%s",
+        settings.database_path,
+        settings.concurrency,
+        effective_batch,
+    )
     with Database(settings.database_path) as database, ExitStack() as stack:
         stack.enter_context(monitoring_session(settings))
         async with BoardScanner(database, settings) as scanner:
             while not stop.is_set():
-                try:
-                    attempts = await scanner.scan_due(limit=effective_batch)
-                except ExceptionGroup as group:
-                    for error in group.exceptions:
-                        LOGGER.error(
-                            "unexpected scanner failure: %s: %s",
-                            type(error).__name__,
-                            error,
-                        )
-                    attempts = []
+                scan_task = asyncio.create_task(
+                    scanner.scan_due(limit=effective_batch)
+                )
+                stop_task = asyncio.create_task(stop.wait())
+                done, _ = await asyncio.wait(
+                    {scan_task, stop_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if stop_task in done:
+                    LOGGER.info("stop requested; cancelling in-flight scans")
+                    scan_task.cancel()
+                    try:
+                        attempts = await scan_task
+                    except asyncio.CancelledError:
+                        attempts = []
+                    except ExceptionGroup as group:
+                        for error in group.exceptions:
+                            if not isinstance(error, asyncio.CancelledError):
+                                LOGGER.error(
+                                    "unexpected scanner failure: %s: %s",
+                                    type(error).__name__,
+                                    error,
+                                )
+                        attempts = []
+                else:
+                    stop_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await stop_task
+                    try:
+                        attempts = scan_task.result()
+                    except ExceptionGroup as group:
+                        for error in group.exceptions:
+                            LOGGER.error(
+                                "unexpected scanner failure: %s: %s",
+                                type(error).__name__,
+                                error,
+                            )
+                        attempts = []
+
                 for attempt in attempts:
                     completed_scans += 1
                     LOGGER.info(
-                        "source=%s provider=%s status=%s records=%s requests=%s elapsed=%.2fs",
+                        "source=%s provider=%s status=%s records=%s requests=%s "
+                        "presence=%s elapsed=%.2fs",
                         attempt.source.id,
                         attempt.source.provider,
                         attempt.outcome.status.value,
                         attempt.outcome.record_count,
                         attempt.request_count,
+                        attempt.source.canada_presence.value,
                         attempt.elapsed_seconds,
                     )
                     for warning in attempt.warnings:
                         LOGGER.warning("source=%s %s", attempt.source.id, warning)
                 if once:
                     return completed_scans
+                if stop.is_set():
+                    break
                 if attempts:
                     await asyncio.sleep(0)
                     continue
@@ -75,6 +115,7 @@ async def run_worker(
                 delay = 60.0
                 if future_due:
                     delay = max(0.25, min(60.0, (min(future_due) - now).total_seconds()))
+                LOGGER.info("no due sources; sleeping up to %.1fs", delay)
                 try:
                     await asyncio.wait_for(stop.wait(), timeout=delay)
                 except TimeoutError:
