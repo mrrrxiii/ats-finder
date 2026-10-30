@@ -239,8 +239,8 @@ audited.
   must never be fetched.
 - **Job History** shows first/last observation, removal/reappearance/repost
   state, every scan decision, immutable content versions, and application
-  status history. Search and presence filters run in SQLite, and the bounded
-  result page is exported as CSV.
+  status history. Company, title, location, and full job-description searches
+  run in SQLite, and the bounded result page is exported as CSV.
 
 ## Scheduler and failure behavior
 

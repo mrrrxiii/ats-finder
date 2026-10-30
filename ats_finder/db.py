@@ -6,6 +6,7 @@ from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
+import re
 import sqlite3
 import threading
 
@@ -82,6 +83,13 @@ def _optional_bool(value: int | None) -> bool | None:
     return None if value is None else bool(value)
 
 
+def _contains_whole_word(value: str | None, needle: str | None) -> int:
+    if not value or not needle:
+        return 0
+    pattern = rf"(?<!\w){re.escape(needle.strip())}(?!\w)"
+    return int(re.search(pattern, value, re.IGNORECASE) is not None)
+
+
 class Database:
     """Thread-safe SQLite store.
 
@@ -110,6 +118,12 @@ class Database:
             check_same_thread=False,
         )
         self._connection.row_factory = sqlite3.Row
+        self._connection.create_function(
+            "WHOLE_WORD",
+            2,
+            _contains_whole_word,
+            deterministic=True,
+        )
         self._connection.execute("PRAGMA foreign_keys = ON")
         self._connection.execute(f"PRAGMA busy_timeout = {int(timeout_seconds * 1000)}")
         if self.path != ":memory:":

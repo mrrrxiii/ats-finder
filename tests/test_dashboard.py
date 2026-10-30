@@ -63,6 +63,15 @@ def test_streamlit_entry_point_renders_all_pages_without_exceptions(
         app.radio[0].set_value(page).run(timeout=10)
         assert not app.exception
 
+    app.radio[0].set_value("Job History").run(timeout=10)
+    assert [item.label for item in app.text_input] == [
+        "Company",
+        "Job title",
+        "Location",
+        "Job description",
+    ]
+    assert any(item.label == "Whole-word search" for item in app.toggle)
+
 
 def test_recent_window_options_are_ordered_and_include_72_hours() -> None:
     assert DEFAULT_RECENT_WINDOW == "72 hours"
@@ -78,7 +87,12 @@ def test_history_filtering_and_limit_run_before_materializing_results(
         harness.source.id,
         [
             job_factory("java", title="Java Engineer", location="Ottawa"),
-            job_factory("python", title="Python Engineer", location="Toronto"),
+            job_factory(
+                "python",
+                title="Python Engineer",
+                description="Build Python services.",
+                location="Toronto",
+            ),
         ],
         completed_at=FIXED_NOW,
     )
@@ -91,7 +105,12 @@ def test_history_filtering_and_limit_run_before_materializing_results(
     )
 
     assert frame["Job Title"].tolist() == ["Java Engineer"]
-    assert frame["ATS"].tolist() == ["Greenhouse"]
+    assert frame["Job URL"].tolist() == [
+        "https://boards.greenhouse.io/example-company/jobs/java"
+    ]
+    assert list(frame.columns).index("Job URL") == 4
+    assert "Job Description" not in frame.columns
+    assert "ATS" not in frame.columns
 
     ottawa = _history_frame(
         harness.database,
@@ -102,15 +121,77 @@ def test_history_filtering_and_limit_run_before_materializing_results(
     )
     assert ottawa["Job Title"].tolist() == ["Java Engineer"]
 
+    description = _history_frame(
+        harness.database,
+        description="java services",
+        state="ACTIVE",
+        limit=10,
+    )
+    assert description["Job Title"].tolist() == ["Java Engineer"]
+
     no_match = _history_frame(
         harness.database,
         company="Example Company",
         title="python",
         location="ottawa",
+        description="java services",
         state="ACTIVE",
         limit=10,
     )
     assert no_match.empty
+
+
+def test_history_search_can_match_java_as_a_whole_word(
+    harness: EngineHarness,
+    job_factory: JobFactory,
+) -> None:
+    harness.engine.process_complete_scan(
+        harness.source.id,
+        [
+            job_factory(
+                "java",
+                title="Java Engineer",
+                description="Build Java platform services.",
+            ),
+            job_factory(
+                "javascript",
+                title="JavaScript Engineer",
+                description="Build JavaScript browser applications.",
+            ),
+        ],
+        completed_at=FIXED_NOW,
+    )
+
+    substring = _history_frame(
+        harness.database,
+        title="Java",
+        description="Java",
+        state="ACTIVE",
+        limit=10,
+    )
+    whole_word = _history_frame(
+        harness.database,
+        title="Java",
+        description="Java",
+        whole_word=True,
+        state="ACTIVE",
+        limit=10,
+    )
+
+    assert set(substring["Job Title"]) == {
+        "Java Engineer",
+        "JavaScript Engineer",
+    }
+    assert whole_word["Job Title"].tolist() == ["Java Engineer"]
+
+    both_terms = _history_frame(
+        harness.database,
+        description="Java platform",
+        whole_word=True,
+        state="ACTIVE",
+        limit=10,
+    )
+    assert both_terms["Job Title"].tolist() == ["Java Engineer"]
 
 
 def test_72_hour_window_lists_publication_the_default_policy_hides(

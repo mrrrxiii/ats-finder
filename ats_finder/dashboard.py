@@ -525,6 +525,8 @@ def _history_frame(
     company: str = "",
     title: str = "",
     location: str = "",
+    description: str = "",
+    whole_word: bool = False,
     state: str = "ALL",
     limit: int = 2_000,
 ) -> pd.DataFrame:
@@ -541,8 +543,23 @@ def _history_frame(
     ):
         normalized_value = value.strip()
         if normalized_value:
-            clauses.append(f"INSTR(LOWER(j.{column}), LOWER(?)) > 0")
+            if whole_word:
+                clauses.append(f"WHOLE_WORD(j.{column}, ?) = 1")
+            else:
+                clauses.append(f"INSTR(LOWER(j.{column}), LOWER(?)) > 0")
             parameters.append(normalized_value)
+    normalized_description = description.strip()
+    if normalized_description:
+        for term in normalized_description.split():
+            if whole_word:
+                clauses.append(
+                    "WHOLE_WORD(COALESCE(v.description, ''), ?) = 1"
+                )
+            else:
+                clauses.append(
+                    "INSTR(LOWER(COALESCE(v.description, '')), LOWER(?)) > 0"
+                )
+            parameters.append(term)
     if state != "ALL":
         clauses.append("j.current_state = ?")
         parameters.append(state)
@@ -555,9 +572,11 @@ def _history_frame(
                    j.last_seen_at, j.current_state, j.discovery_type,
                    j.java_keyword_match, j.location_match,
                    j.potential_repost_of_job_id, j.application_status,
-                   j.application_url, s.provider
+                   j.application_url
             FROM jobs AS j
-            JOIN ats_sources AS s ON s.id = j.source_id
+            LEFT JOIN job_versions AS v
+              ON v.job_id = j.id
+             AND v.content_fingerprint = j.content_fingerprint
             {where}
             ORDER BY j.last_seen_at DESC, j.id DESC
             LIMIT ?
@@ -565,7 +584,6 @@ def _history_frame(
             connection,
             params=tuple(parameters),
         )
-    frame["ATS"] = frame.pop("provider").str.title()
     frame["First Seen"] = pd.to_datetime(frame["first_seen_at"], utc=True, format="mixed")
     frame["Last Seen"] = pd.to_datetime(frame["last_seen_at"], utc=True, format="mixed")
     frame["Discovery"] = frame["discovery_type"].map(discovery_label)
@@ -589,7 +607,7 @@ def _history_frame(
             "Company",
             "Job Title",
             "Location",
-            "ATS",
+            "Job URL",
             "First Seen",
             "Last Seen",
             "State",
@@ -598,7 +616,6 @@ def _history_frame(
             "Location Decision",
             "Potential Repost Of",
             "Application Status",
-            "Job URL",
         ]
     ]
 
@@ -606,10 +623,20 @@ def _history_frame(
 def history_page(database: Database, settings: Settings) -> None:
     del settings
     st.header("Job History")
-    search_columns = st.columns(3)
+    whole_word = st.toggle(
+        "Whole-word search",
+        value=False,
+        help="Match complete words, so Java does not also match JavaScript.",
+    )
+    search_columns = st.columns(4)
     company = search_columns[0].text_input("Company")
     title = search_columns[1].text_input("Job title")
     location = search_columns[2].text_input("Location")
+    description = search_columns[3].text_input("Job description")
+    st.caption(
+        "Multiple Job description words are combined with AND: "
+        "`java kubernetes` requires both terms."
+    )
     state = st.selectbox("Presence", ["ALL", "ACTIVE", "REMOVED"])
     limit = st.selectbox(
         "Rows to display",
@@ -622,6 +649,8 @@ def history_page(database: Database, settings: Settings) -> None:
         company=company,
         title=title,
         location=location,
+        description=description,
+        whole_word=whole_word,
         state=state,
         limit=limit,
     )
