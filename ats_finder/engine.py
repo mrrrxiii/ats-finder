@@ -316,10 +316,12 @@ class ScanEngine:
     ) -> list[RecentJob]:
         """Return confirmed Java/location matches after title exclusions.
 
-        Verified publication and snapshot discovery remain visibly distinct.
-        Potential reposts, uncertain locations, stale-snapshot discoveries, and
-        removed jobs are excluded. A linked potential repost is included only
-        when it independently has verified recent publication evidence.
+        Verified publication and observation-time discovery remain visibly
+        distinct. An undated matching job becomes a candidate when its first
+        observation falls inside the selected window. Potential reposts,
+        nonmatching locations, and removed jobs are excluded. A linked
+        potential repost is included only when it independently has verified
+        recent publication evidence.
         """
 
         current = as_utc(now) if now is not None else utc_now()
@@ -330,7 +332,16 @@ class ScanEngine:
         with self.database.read() as connection:
             rows = connection.execute(
                 """
-                SELECT j.*, s.provider AS source_provider,
+                SELECT j.id, j.source_id, j.company, j.title, j.location,
+                       j.workplace_type, j.published_at,
+                       j.publication_source, j.publication_semantics,
+                       j.publication_is_verified, j.first_seen_at,
+                       j.discovery_type, j.discovery_at,
+                       j.discovery_previous_scan_at,
+                       j.discovery_snapshot_gap_seconds,
+                       j.potential_repost_of_job_id, j.application_url,
+                       j.application_status,
+                       s.provider AS source_provider,
                        s.board_identifier AS source_board_identifier
                 FROM jobs AS j
                 JOIN ats_sources AS s ON s.id = j.source_id
@@ -350,20 +361,16 @@ class ScanEngine:
             verified_recent = bool(row["publication_is_verified"]) and (
                 published_at is not None and cutoff <= published_at <= current
             )
-            snapshot_recent = (
+            discovery_recent = (
                 row["potential_repost_of_job_id"] is None
                 and not bool(row["publication_is_verified"])
-                and row["discovery_type"] == DiscoveryType.NEWLY_DETECTED.value
                 and cutoff <= discovery_at <= current
-                and row["discovery_snapshot_gap_seconds"] is not None
-                and float(row["discovery_snapshot_gap_seconds"])
-                <= self.policy.snapshot_max_gap.total_seconds()
             )
             if verified_recent:
                 discovery_type = DiscoveryType.VERIFIED_RECENT
                 displayed_publication = published_at
-            elif snapshot_recent:
-                discovery_type = DiscoveryType.NEWLY_DETECTED
+            elif discovery_recent:
+                discovery_type = DiscoveryType(row["discovery_type"])
                 displayed_publication = None
             else:
                 continue
@@ -536,7 +543,15 @@ class ScanEngine:
             source = self._require_source(connection, source_id)
             cutoff = completed - self.policy.verified_publication_retention
             pre_retention_rows = connection.execute(
-                "SELECT * FROM jobs WHERE source_id = ? ORDER BY id",
+                """
+                SELECT j.*, COALESCE(v.description, '') AS resolved_description
+                FROM jobs AS j
+                LEFT JOIN job_versions AS v
+                  ON v.job_id = j.id
+                 AND v.content_fingerprint = j.content_fingerprint
+                WHERE j.source_id = ?
+                ORDER BY j.id
+                """,
                 (source_id,),
             ).fetchall()
             pre_retention_by_external_id = {
@@ -603,7 +618,15 @@ class ScanEngine:
                 }
 
             history_rows = connection.execute(
-                "SELECT * FROM jobs WHERE source_id = ? ORDER BY id",
+                """
+                SELECT j.*, COALESCE(v.description, '') AS resolved_description
+                FROM jobs AS j
+                LEFT JOIN job_versions AS v
+                  ON v.job_id = j.id
+                 AND v.content_fingerprint = j.content_fingerprint
+                WHERE j.source_id = ?
+                ORDER BY j.id
+                """,
                 (source_id,),
             ).fetchall()
             history_by_external_id = {row["provider_job_id"]: row for row in history_rows}
@@ -614,6 +637,7 @@ class ScanEngine:
 
             for job in sorted(jobs, key=lambda value: value.provider_job_id):
                 existing = history_by_external_id.get(job.provider_job_id)
+                newly_inserted = existing is None
                 company = job.company or source["company"]
                 decision = classify_location(
                     job.location,
@@ -703,10 +727,19 @@ class ScanEngine:
                         potential_repost_of=potential_repost_of,
                         repost_similarity=repost_similarity,
                     )
-                    existing = connection.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+                    existing = connection.execute(
+                        """
+                        SELECT j.*, COALESCE(v.description, '') AS resolved_description
+                        FROM jobs AS j
+                        LEFT JOIN job_versions AS v
+                          ON v.job_id = j.id
+                         AND v.content_fingerprint = j.content_fingerprint
+                        WHERE j.id = ?
+                        """,
+                        (job_id,),
+                    ).fetchone()
                     assert existing is not None
                     history_by_external_id[job.provider_job_id] = existing
-                    self._add_repost_candidate(repost_candidates, existing)
                 else:
                     job_id = int(existing["id"])
                     was_in_previous_snapshot = job.provider_job_id in previous_present_ids
@@ -798,6 +831,20 @@ class ScanEngine:
                     potential_repost_of=potential_repost_of,
                     repost_similarity=repost_similarity,
                 )
+                if newly_inserted:
+                    versioned = connection.execute(
+                        """
+                        SELECT j.*, COALESCE(v.description, '') AS resolved_description
+                        FROM jobs AS j
+                        JOIN job_versions AS v
+                          ON v.job_id = j.id
+                         AND v.content_fingerprint = j.content_fingerprint
+                        WHERE j.id = ?
+                        """,
+                        (job_id,),
+                    ).fetchone()
+                    assert versioned is not None
+                    self._add_repost_candidate(repost_candidates, versioned)
 
             for removed_external_id in sorted(previous_present_ids - current_ids):
                 removed = history_by_external_id[removed_external_id]
@@ -941,7 +988,7 @@ class ScanEngine:
         ).fetchone()
         target_count = int(row["count"])
         if target_count:
-            for table in ("jobs", "job_observations", "job_events"):
+            for table in ("jobs", "job_observations"):
                 connection.execute(
                     f"""
                     UPDATE {table}
@@ -1131,13 +1178,18 @@ class ScanEngine:
     def _repost_candidate(self, row: sqlite3.Row) -> tuple[str, _RepostCandidate]:
         company = self._similarity_text(row["company"] or "")
         title = self._similarity_text(row["title"] or "")
+        description = (
+            row["resolved_description"]
+            if "resolved_description" in row.keys()
+            else row["description"]
+        )
         return company, _RepostCandidate(
             original_id=int(row["potential_repost_of_job_id"] or row["id"]),
             fingerprint=str(row["content_fingerprint"]),
             title=title,
             title_tokens=self._title_tokens(title),
             description_shingles=self._description_shingles(
-                self._similarity_text(row["description"] or "")
+                self._similarity_text(description or "")
             ),
             location=self._similarity_text(row["location"] or ""),
         )
@@ -1234,7 +1286,7 @@ class ScanEngine:
                 provider_job_id,
                 company,
                 job.title,
-                job.description,
+                "",
                 job.location,
                 decision.workplace_type.value,
                 decision.canada_remote_eligibility,
@@ -1283,7 +1335,7 @@ class ScanEngine:
         connection.execute(
             """
             UPDATE jobs SET
-                company = ?, title = ?, description = ?, location = ?,
+                company = ?, title = ?, description = '', location = ?,
                 workplace_type = ?, canada_remote_eligibility = ?,
                 location_match = ?, location_reason = ?, java_keyword_match = ?,
                 published_at = ?, publication_source = ?, publication_semantics = ?,
@@ -1297,7 +1349,6 @@ class ScanEngine:
             (
                 company,
                 job.title,
-                job.description,
                 job.location,
                 decision.workplace_type.value,
                 decision.canada_remote_eligibility,
@@ -1347,7 +1398,6 @@ class ScanEngine:
         potential_repost_of: int | None,
         repost_similarity: float | None,
     ) -> None:
-        del company  # company is immutable in jobs and not required by the observation table
         connection.execute(
             """
             INSERT INTO job_observations (
@@ -1375,6 +1425,39 @@ class ScanEngine:
                 comparison_scan_id,
                 datetime_to_storage(comparison_scan_at),
                 snapshot_gap_seconds,
+                "",
+                "",
+                "",
+                WorkplaceType.UNKNOWN.value,
+                None,
+                LocationMatch.REJECTED.value,
+                "",
+                0,
+                None,
+                None,
+                None,
+                0,
+                "",
+                potential_repost_of,
+                repost_similarity,
+            ),
+        )
+        # The trigger sees the compact observation and creates only missing
+        # versions. Filling a newly-created version keeps the observation row
+        # small while retaining every immutable content field.
+        connection.execute(
+            """
+            UPDATE job_versions
+            SET company = ?, title = ?, description = ?, location = ?,
+                workplace_type = ?, canada_remote_eligibility = ?,
+                location_match = ?, location_reason = ?, java_keyword_match = ?,
+                published_at = ?, publication_source = ?,
+                publication_semantics = ?, publication_is_verified = ?,
+                application_url = ?
+            WHERE job_id = ? AND content_fingerprint = ? AND title = ''
+            """,
+            (
+                company,
                 job.title,
                 job.description,
                 job.location,
@@ -1388,8 +1471,8 @@ class ScanEngine:
                 publication["publication_semantics"],
                 int(bool(publication["publication_is_verified"])),
                 job.application_url,
-                potential_repost_of,
-                repost_similarity,
+                job_id,
+                fingerprint,
             ),
         )
 
@@ -1429,19 +1512,19 @@ class ScanEngine:
                 previous_scan_id,
                 datetime_to_storage(previous_scan_at),
                 gap_seconds,
-                row["title"],
-                row["description"],
-                row["location"],
-                row["workplace_type"],
-                row["canada_remote_eligibility"],
-                row["location_match"],
-                row["location_reason"],
-                row["java_keyword_match"],
-                row["published_at"],
-                row["publication_source"],
-                row["publication_semantics"],
-                row["publication_is_verified"],
-                row["application_url"],
+                "",
+                "",
+                "",
+                WorkplaceType.UNKNOWN.value,
+                None,
+                LocationMatch.REJECTED.value,
+                "",
+                0,
+                None,
+                None,
+                None,
+                0,
+                "",
                 row["potential_repost_of_job_id"],
                 row["repost_similarity"],
             ),

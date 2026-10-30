@@ -18,6 +18,7 @@ from ats_finder.models import (
     SourceLastScanResult,
     SourceSupportStatus,
 )
+from ats_finder.urls import job_detail_url
 
 
 RECENT_WINDOW_OPTIONS: dict[str, timedelta] = {
@@ -67,7 +68,12 @@ def evidence_age_label(job: RecentJob, *, now: datetime | None = None) -> str:
         if job.published_at is None:
             raise ValueError("VERIFIED_RECENT job is missing its publication timestamp")
         return f"Published {_age(job.published_at, current)}"
-    if job.discovery_type is DiscoveryType.NEWLY_DETECTED:
+    if job.discovery_type in {
+        DiscoveryType.BASELINE,
+        DiscoveryType.NEWLY_DETECTED,
+        DiscoveryType.NEWLY_DETECTED_TIME_UNCERTAIN,
+        DiscoveryType.REAPPEARED,
+    }:
         return f"First detected {_age(job.detection_at, current)}"
     return discovery_label(job.discovery_type)
 
@@ -77,7 +83,7 @@ def recent_job_row(job: RecentJob, *, now: datetime | None = None) -> dict[str, 
         "Company": job.company,
         "Job Title": job.title,
         "Published At": job.published_at,
-        "Application URL": job.application_url,
+        "Job URL": job_detail_url(job.application_url),
         "Location": job.location,
         "Work Mode": job.workplace_type.value.title(),
         "Discovery Type": discovery_label(job.discovery_type),
@@ -124,8 +130,8 @@ def _render_job_table(
         on_select="rerun",
         selection_mode="single-row",
         column_config={
-            "Application URL": st.column_config.LinkColumn(
-                "Official application", display_text="Apply"
+            "Job URL": st.column_config.LinkColumn(
+                "Job description", display_text="View job"
             ),
             "Published At": st.column_config.DatetimeColumn(
                 "Published At (verified)", format="YYYY-MM-DD HH:mm [UTC]"
@@ -175,7 +181,7 @@ def latest_page(database: Database, settings: Settings) -> None:
     st.caption(
         "Only confirmed Java roles in Ottawa or explicitly remote from Canada are shown. "
         "Titles containing Staff, Principle, Principal, Manager, or Architect are excluded. "
-        "Publication time and first-detection time are deliberately not conflated."
+        "Verified publication time and first-observation time are deliberately not conflated."
     )
     window_label = st.selectbox(
         "Evidence window",
@@ -183,7 +189,7 @@ def latest_page(database: Database, settings: Settings) -> None:
         index=list(RECENT_WINDOW_OPTIONS).index(DEFAULT_RECENT_WINDOW),
         key="recent_window",
         help=(
-            "Verified publication or snapshot-detection evidence must fall inside this "
+            "Verified publication or first-observation time must fall inside this "
             "window to be listed."
         ),
     )
@@ -202,6 +208,15 @@ def latest_page(database: Database, settings: Settings) -> None:
     detected = frame[
         frame.get("Discovery Type", pd.Series(dtype=str))
         == discovery_label(DiscoveryType.NEWLY_DETECTED)
+    ] if not frame.empty else frame
+    first_observed = frame[
+        frame.get("Discovery Type", pd.Series(dtype=str)).isin(
+            [
+                discovery_label(DiscoveryType.BASELINE),
+                discovery_label(DiscoveryType.NEWLY_DETECTED_TIME_UNCERTAIN),
+                discovery_label(DiscoveryType.REAPPEARED),
+            ]
+        )
     ] if not frame.empty else frame
 
     def _select_job(job_id: int) -> None:
@@ -229,6 +244,19 @@ def latest_page(database: Database, settings: Settings) -> None:
         detected, key="newly_detected_java_jobs", on_row_pick=_select_job
     )
 
+    st.subheader(
+        f"Other matching jobs first observed in the last {window_label}"
+    )
+    st.caption(
+        "These jobs match the Java and location filters but have no verified "
+        f"publication time. Their first observation is within the same "
+        f"{window_label} evidence window selected above; it is not a publication "
+        "date."
+    )
+    _render_job_table(
+        first_observed, key="first_observed_java_jobs", on_row_pick=_select_job
+    )
+
     if jobs:
         st.subheader("Job detail")
         labels = {str(job.job_id): f"{job.company} — {job.title}" for job in jobs}
@@ -247,7 +275,7 @@ def latest_page(database: Database, settings: Settings) -> None:
         if record is not None:
             st.markdown(f"### {record.title}")
             st.write(record.description or "No description was returned by the ATS.")
-            st.link_button("Open official application", record.application_url)
+            st.link_button("Open job description", job_detail_url(record.application_url))
             _application_editor(database, record.id, record.application_status)
 
 
@@ -255,18 +283,29 @@ def _coverage_rows(database: Database, now: datetime, stale_after: timedelta) ->
     with database.read() as connection:
         rows = connection.execute(
             """
+            WITH run_stats AS (
+                SELECT
+                    source_id,
+                    COUNT(CASE WHEN completion_status = 'SUCCESS' THEN 1 END)
+                        AS successful_runs,
+                    MIN(CASE WHEN completion_status = 'SUCCESS' THEN ended_at END)
+                        AS first_success,
+                    MAX(CASE WHEN completion_status = 'SUCCESS' THEN ended_at END)
+                        AS latest_success
+                FROM scan_runs
+                GROUP BY source_id
+            )
             SELECT s.*,
                    EXISTS (
                        SELECT 1 FROM source_exclusions AS e
                        WHERE e.provider = s.provider
                          AND e.board_identifier = s.board_identifier
                    ) AS is_excluded,
-                   COUNT(CASE WHEN r.completion_status = 'SUCCESS' THEN 1 END) AS successful_runs,
-                   MIN(CASE WHEN r.completion_status = 'SUCCESS' THEN r.ended_at END) AS first_success,
-                   MAX(CASE WHEN r.completion_status = 'SUCCESS' THEN r.ended_at END) AS latest_success
+                   COALESCE(r.successful_runs, 0) AS successful_runs,
+                   r.first_success,
+                   r.latest_success
             FROM ats_sources AS s
-            LEFT JOIN scan_runs AS r ON r.source_id = s.id
-            GROUP BY s.id
+            LEFT JOIN run_stats AS r ON r.source_id = s.id
             ORDER BY s.company COLLATE NOCASE, s.id
             """
         ).fetchall()
@@ -480,77 +519,137 @@ def coverage_page(database: Database, settings: Settings) -> None:
             )
 
 
-def _history_frame(database: Database) -> pd.DataFrame:
+def _history_frame(
+    database: Database,
+    *,
+    company: str = "",
+    title: str = "",
+    location: str = "",
+    state: str = "ALL",
+    limit: int = 2_000,
+) -> pd.DataFrame:
+    if limit <= 0:
+        raise ValueError("limit must be positive")
+    if state not in {"ALL", "ACTIVE", "REMOVED"}:
+        raise ValueError("state must be ALL, ACTIVE, or REMOVED")
+    clauses: list[str] = []
+    parameters: list[object] = []
+    for column, value in (
+        ("company", company),
+        ("title", title),
+        ("location", location),
+    ):
+        normalized_value = value.strip()
+        if normalized_value:
+            clauses.append(f"INSTR(LOWER(j.{column}), LOWER(?)) > 0")
+            parameters.append(normalized_value)
+    if state != "ALL":
+        clauses.append("j.current_state = ?")
+        parameters.append(state)
+    where = "" if not clauses else "WHERE " + " AND ".join(clauses)
+    parameters.append(limit)
     with database.read() as connection:
-        rows = connection.execute(
-            """
-            SELECT j.*, s.provider, s.board_identifier
+        frame = pd.read_sql_query(
+            f"""
+            SELECT j.id, j.company, j.title, j.location, j.first_seen_at,
+                   j.last_seen_at, j.current_state, j.discovery_type,
+                   j.java_keyword_match, j.location_match,
+                   j.potential_repost_of_job_id, j.application_status,
+                   j.application_url, s.provider
             FROM jobs AS j
             JOIN ats_sources AS s ON s.id = j.source_id
+            {where}
             ORDER BY j.last_seen_at DESC, j.id DESC
-            """
-        ).fetchall()
-    return _frame(
-        {
-            "Job ID": int(row["id"]),
-            "Company": row["company"],
-            "Job Title": row["title"],
-            "Location": row["location"],
-            "ATS": str(row["provider"]).title(),
-            "First Seen": datetime_from_storage(row["first_seen_at"]),
-            "Last Seen": datetime_from_storage(row["last_seen_at"]),
-            "State": row["current_state"],
-            "Discovery": discovery_label(row["discovery_type"]),
-            "Java": bool(row["java_keyword_match"]),
-            "Location Decision": row["location_match"],
-            "Potential Repost Of": row["potential_repost_of_job_id"],
-            "Application Status": row["application_status"],
-            "Application URL": row["application_url"],
+            LIMIT ?
+            """,
+            connection,
+            params=tuple(parameters),
+        )
+    frame["ATS"] = frame.pop("provider").str.title()
+    frame["First Seen"] = pd.to_datetime(frame["first_seen_at"], utc=True, format="mixed")
+    frame["Last Seen"] = pd.to_datetime(frame["last_seen_at"], utc=True, format="mixed")
+    frame["Discovery"] = frame["discovery_type"].map(discovery_label)
+    frame["Java"] = frame["java_keyword_match"].astype(bool)
+    frame["application_url"] = frame["application_url"].map(job_detail_url)
+    return frame.rename(
+        columns={
+            "id": "Job ID",
+            "company": "Company",
+            "title": "Job Title",
+            "location": "Location",
+            "current_state": "State",
+            "location_match": "Location Decision",
+            "potential_repost_of_job_id": "Potential Repost Of",
+            "application_status": "Application Status",
+            "application_url": "Job URL",
         }
-        for row in rows
-    )
+    )[
+        [
+            "Job ID",
+            "Company",
+            "Job Title",
+            "Location",
+            "ATS",
+            "First Seen",
+            "Last Seen",
+            "State",
+            "Discovery",
+            "Java",
+            "Location Decision",
+            "Potential Repost Of",
+            "Application Status",
+            "Job URL",
+        ]
+    ]
 
 
 def history_page(database: Database, settings: Settings) -> None:
     del settings
     st.header("Job History")
-    frame = _history_frame(database)
-    if frame.empty:
-        st.info("No job history exists yet. Complete a board scan to create a baseline.")
-        return
-    search = st.text_input("Search company, title, or location")
+    search_columns = st.columns(3)
+    company = search_columns[0].text_input("Company")
+    title = search_columns[1].text_input("Job title")
+    location = search_columns[2].text_input("Location")
     state = st.selectbox("Presence", ["ALL", "ACTIVE", "REMOVED"])
-    filtered = frame
-    if search:
-        mask = (
-            filtered[["Company", "Job Title", "Location"]]
-            .fillna("")
-            .astype(str)
-            .apply(lambda column: column.str.contains(search, case=False, regex=False))
-            .any(axis=1)
+    limit = st.selectbox(
+        "Rows to display",
+        [500, 2_000, 5_000, 10_000],
+        index=1,
+        help="Search runs in SQLite before this limit is applied.",
+    )
+    frame = _history_frame(
+        database,
+        company=company,
+        title=title,
+        location=location,
+        state=state,
+        limit=limit,
+    )
+    if frame.empty:
+        st.info(
+            "No job history matches these filters. Clear the search fields or run "
+            "a board scan to create history."
         )
-        filtered = filtered[mask]
-    if state != "ALL":
-        filtered = filtered[filtered["State"] == state]
+        return
 
     st.dataframe(
-        filtered.drop(columns=["Job ID"]),
+        frame.drop(columns=["Job ID"]),
         width="stretch",
         hide_index=True,
         column_config={
-            "Application URL": st.column_config.LinkColumn(
-                "Official application", display_text="Apply"
+            "Job URL": st.column_config.LinkColumn(
+                "Job description", display_text="View job"
             )
         },
     )
     st.download_button(
-        "Download filtered history CSV",
-        filtered.to_csv(index=False).encode("utf-8"),
-        file_name="java_job_history.csv",
+        "Download displayed history CSV",
+        frame.to_csv(index=False).encode("utf-8"),
+        file_name="java_job_history_page.csv",
         mime="text/csv",
     )
 
-    available_ids = [int(value) for value in filtered["Job ID"].tolist()]
+    available_ids = [int(value) for value in frame["Job ID"].tolist()]
     if not available_ids:
         return
     selected_id = st.selectbox(
@@ -566,7 +665,7 @@ def history_page(database: Database, settings: Settings) -> None:
         return
     st.markdown(f"### {job.title}")
     st.write(job.description or "No description was returned by the ATS.")
-    st.link_button("Open official application", job.application_url)
+    st.link_button("Open job description", job_detail_url(job.application_url))
     _application_editor(database, job.id, job.application_status)
     observations = database.list_observations(job_id=job.id)
     observation_frame = _frame(
@@ -596,7 +695,7 @@ def history_page(database: Database, settings: Settings) -> None:
             "Timestamp Semantics": item["publication_semantics"],
             "Timestamp Verified": bool(item["publication_is_verified"]),
             "Content Fingerprint": item["content_fingerprint"],
-            "Application URL": item["application_url"],
+            "Job URL": job_detail_url(str(item["application_url"])),
         }
         for item in versions
     )
@@ -606,8 +705,8 @@ def history_page(database: Database, settings: Settings) -> None:
         width="stretch",
         hide_index=True,
         column_config={
-            "Application URL": st.column_config.LinkColumn(
-                "Official application", display_text="Apply"
+            "Job URL": st.column_config.LinkColumn(
+                "Job description", display_text="View job"
             )
         },
     )

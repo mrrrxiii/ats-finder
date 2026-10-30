@@ -1,15 +1,20 @@
 # SQLite Schema
 
-Schema version: **5**. The executable schema, indexes, triggers, v1-to-v5
-migrations, and row mappings are in `ats_finder/db.py`. Version 5 adds the
+Schema version: **7**. The executable schema, indexes, triggers, v1-to-v7
+migrations, and row mappings are in `ats_finder/db.py`. Version 7 makes
+`job_events` a view over `job_observations` and resolves both observation and
+current-job content from `job_versions`. Existing duplicated content can be
+compacted while retaining every observation and the canonical immutable
+version using `ats-finder compact-history --vacuum`. Version 6 stopped storing
+observation descriptions directly. Version 5 adds the
 `canada_presence` source classification. A board with active jobs but no
 Canadian location is marked `NONE` and rechecked after 30 days instead of the
 normal interval. Version 4 adds the `source_exclusions` table, an operator
 policy that keeps a board out of every future scan without deleting its
 history. Version 3 added the `idx_jobs_repost_link`,
-`idx_observations_repost_link`, and `idx_job_events_repost_link` indexes so
-retention can clear repost links with indexed lookups instead of full table
-scans. Timestamps are timezone-aware UTC ISO 8601 strings ending in `Z`.
+`idx_observations_repost_link`, and `idx_job_events_repost_link` indexes;
+version 7 removes the last one with the physical event table. Timestamps are
+timezone-aware UTC ISO 8601 strings ending in `Z`.
 
 SQLite runs with foreign keys enabled, a 30-second busy timeout by default, WAL
 mode for file databases, and immediate transactions for writes. A successful
@@ -65,7 +70,9 @@ baseline.
 ## `jobs`
 
 Current materialized state of every identifier ever observed. Unique keys:
-`composite_identity` and `(source_id, provider_job_id)`.
+`composite_identity` and `(source_id, provider_job_id)`. The current
+`description` is resolved from the matching `job_versions` row using
+`content_fingerprint`.
 
 | Column group | Columns |
 |---|---|
@@ -81,13 +88,13 @@ Current materialized state of every identifier ever observed. Unique keys:
 
 ## `job_observations`
 
-The full per-job result of every successful complete snapshot. Unique key:
+The per-job decision for every successful complete snapshot. Unique key:
 `(scan_id, job_id)`. It stores observation time, content fingerprint, presence,
 `BASELINE`/`ADDED`/`UNCHANGED`/`CHANGED`/`REMOVED`/`REAPPEARED`/
-`POTENTIAL_REPOST` status, comparison scan evidence, and a copy of the
-normalized job/filter/publication fields needed to reconstruct the decision.
-Removed jobs receive an explicit `is_present=0` observation; failed and
-incomplete scans receive none.
+`POTENTIAL_REPOST` status, comparison scan evidence, and repost link. Schema
+version 7 leaves duplicated content and filter columns empty and resolves them
+from the matching immutable `job_versions` row. Removed jobs receive an
+explicit `is_present=0` observation; failed and incomplete scans receive none.
 
 ## `job_versions`
 
@@ -98,11 +105,11 @@ publication evidence, official application URL, first scan, and recorded time.
 
 ## `job_events`
 
-Immutable event stream derived by trigger from every observation. One event per
-observation records event type, presence, fingerprint, discovery type,
-comparison scan/gap, and optional repost link. This gives the dashboard a
-stable change/removal/reappearance history without inferring it from current
-rows.
+Read-only view exposing every observation as an immutable event. It uses the
+same identifiers, event type, presence, fingerprint, discovery type,
+comparison scan/gap, and optional repost link, but stores no duplicate rows.
+This gives the dashboard a stable change/removal/reappearance history without
+inferring it from current rows.
 
 ## `application_status_history`
 
@@ -126,5 +133,6 @@ idempotent initialization and audit-table backfill before advancing the version.
 - `source_exclusions` is keyed by `(provider, board_identifier)` and is not
   affected by source deletion, re-insertion, or dataset re-import.
 - Scheduling, scan baseline lookup, current source state, recent evidence,
-  observation history, event history, versions, application history, and repost
-  links have dedicated indexes.
+  observation history, versions, application history, and repost links have
+  dedicated indexes. The recent-jobs partial index covers only active,
+  Java-confirmed, location-confirmed jobs.

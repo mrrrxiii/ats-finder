@@ -21,7 +21,7 @@ A job enters the main results only when all four conditions hold:
 3. The role is in Ottawa, Kanata, or Stittsville, or the public posting or
    structured ATS data explicitly establishes remote eligibility from Canada.
    Ambiguous remote roles become `REVIEW_LOCATION` and are excluded.
-4. One of these independent evidence paths qualifies:
+4. One of these independent qualification paths applies:
 
    - `VERIFIED_RECENT`: a documented ATS publication or republication timestamp
      is between `now - 24 hours` and `now` in UTC.
@@ -29,11 +29,16 @@ A job enters the main results only when all four conditions hold:
      successful complete snapshot of the same board, that preceding snapshot
      is at most 24 hours older, and detection occurred within the current
      rolling 24-hour display window.
+   - First observation: the job has no verified publication timestamp but its
+     first observation falls inside the selected display window. This is shown
+     as observation-time evidence, never as a publication date.
 
 An initial scan establishes a `BASELINE`; it does not claim that undated jobs
-are new. An undated addition after a snapshot gap over 24 hours becomes
-`NEWLY_DETECTED_TIME_UNCERTAIN` and is excluded. Failed or incomplete scans do
-not replace the comparison baseline and cannot remove jobs.
+are newly published. Matching baseline jobs can still be candidates using their
+actual first-observation time. An undated addition after a snapshot gap over 24
+hours remains `NEWLY_DETECTED_TIME_UNCERTAIN`, with its first-observation time
+shown separately from publication evidence. Failed or incomplete scans do not
+replace the comparison baseline and cannot remove jobs.
 
 Jobs with a verified publication timestamp strictly older than 60 days are
 hard-deleted with their stored history and are not persisted by later scans.
@@ -91,6 +96,17 @@ Run a small due batch to establish initial baselines:
 .venv/bin/ats-finder-worker --once --batch-size 8
 ```
 
+After upgrading a database created before schema version 7, compact duplicated
+current-job and observation content once. The command preserves every
+observation and the immutable content version it references; `--vacuum`
+rebuilds the file so the released pages are returned to the filesystem. Stop
+the worker and back up the database before running the maintenance command:
+
+```bash
+sqlite3 data/ats_finder.sqlite3 ".backup 'data/ats_finder.backup.sqlite3'"
+.venv/bin/ats-finder --database data/ats_finder.sqlite3 compact-history --vacuum
+```
+
 Run the recurring scanner in a dedicated terminal or service:
 
 ```bash
@@ -125,6 +141,7 @@ The optional global `--database` argument must precede the subcommand:
 .venv/bin/ats-finder --database /tmp/demo.sqlite3 recent --csv
 .venv/bin/ats-finder --database /tmp/demo.sqlite3 recent --unified-sort
 .venv/bin/ats-finder --database /tmp/demo.sqlite3 support-report
+.venv/bin/ats-finder --database /tmp/demo.sqlite3 compact-history --vacuum
 .venv/bin/ats-finder --database /tmp/demo.sqlite3 monitor
 .venv/bin/ats-finder --database /tmp/demo.sqlite3 monitor --watch --interval 30
 .venv/bin/ats-finder --database /tmp/demo.sqlite3 monitor \
@@ -149,6 +166,12 @@ Boards whose active jobs contain no Canadian location are marked
 hourly. Empty boards keep the normal interval. `classify-canada-presence`
 backfills that classification from the current active jobs for boards scanned
 before the policy existed.
+
+The scheduler ranks due boards directly in SQLite. Confirmed Canadian presence
+receives the highest scheduling bonus, followed by unclassified boards;
+operator-set source priority remains part of the score. HTTP 404/410 missing
+boards receive a one-day recovery check, then seven-day and thirty-day checks
+after repeated failures instead of consuming normal hourly capacity.
 
 ### Initial-scan telemetry
 
@@ -199,9 +222,9 @@ audited.
 ## Dashboard
 
 - **Latest Java Openings** separates verified publication evidence from
-  snapshot detection evidence, supports the required evidence-specific sort,
-  exports CSV, displays job details, links only to official application URLs,
-  and updates application status. The evidence window is selectable
+  snapshot detection and first-observation evidence, supports the required
+  evidence-specific sort, exports CSV, displays job details, links only to
+  canonical official job-description URLs, and updates application status. The evidence window is selectable
   (24 hours, 72 hours, 7 days, 30 days) and defaults to 72 hours; only rows
   whose verified publication or snapshot detection falls inside that window are
   listed. Clicking a table row or choosing from the "Job detail" picker selects
@@ -215,8 +238,9 @@ audited.
   operator-excluded boards are excluded from both because they can never or
   must never be fetched.
 - **Job History** shows first/last observation, removal/reappearance/repost
-  state, every scan observation, immutable content versions, and application
-  status history, with CSV export.
+  state, every scan decision, immutable content versions, and application
+  status history. Search and presence filters run in SQLite, and the bounded
+  result page is exported as CSV.
 
 ## Scheduler and failure behavior
 
@@ -234,15 +258,16 @@ latency, rate limits, retries, and configured concurrency.
   incremental checkpoint.
 - On restart, the worker reads persisted `next_scan_at` and last-attempt state.
 - Repeated board failures back off up to 32 scan intervals.
+- HTTP 404/410 missing boards are rechecked after one day, then after seven and
+  thirty days following repeated failures.
 - A complete snapshot with active jobs but no Canadian location is marked
   `canada_presence=NONE` and deferred for 30 days. Empty boards keep the normal
   interval so a newly populated board is still discovered promptly.
-- SmartRecruiters first scans inspect every list page before detail fetching. If
-  no summary can be Canadian or location-unknown, the run is recorded as
-  `SKIPPED_NO_CANADA`, has `pagination_complete=0`, and never replaces the
-  complete-snapshot baseline.
-- Fair ordering combines configured priority with unbounded overdue age, so a
-  low-priority due board eventually outranks repeatedly scanned boards.
+- SQLite selects only due supported boards and ranks them by configured
+  priority, confirmed or unknown Canadian presence, and unbounded overdue age.
+- Each scan decision is stored once. Job content is normalized into immutable
+  versions, while the event history is a view over those decisions rather than
+  a second physical copy.
 - SQLite WAL mode, immediate write transactions, stable composite identities,
   and unique constraints protect persisted state.
 

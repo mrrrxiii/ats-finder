@@ -20,9 +20,12 @@ async def run_worker(
     settings: Settings,
     *,
     once: bool = False,
+    until_complete: bool = False,
     batch_size: int | None = None,
     stop_event: asyncio.Event | None = None,
 ) -> int:
+    if once and until_complete:
+        raise ValueError("once and until_complete are mutually exclusive")
     stop = stop_event or asyncio.Event()
     loop = asyncio.get_running_loop()
     for event in (signal.SIGINT, signal.SIGTERM):
@@ -74,12 +77,21 @@ async def run_worker(
                     try:
                         attempts = scan_task.result()
                     except ExceptionGroup as group:
+                        unexpected: list[Exception] = []
                         for error in group.exceptions:
-                            LOGGER.error(
-                                "unexpected scanner failure: %s: %s",
-                                type(error).__name__,
-                                error,
-                            )
+                            if not isinstance(error, asyncio.CancelledError):
+                                LOGGER.error(
+                                    "unexpected scanner failure: %s: %s",
+                                    type(error).__name__,
+                                    error,
+                                )
+                                if isinstance(error, Exception):
+                                    unexpected.append(error)
+                        if unexpected and (once or until_complete):
+                            raise ExceptionGroup(
+                                "scanner batch failed before all due sources completed",
+                                unexpected,
+                            ) from group
                         attempts = []
 
                 for attempt in attempts:
@@ -104,6 +116,13 @@ async def run_worker(
                 if attempts:
                     await asyncio.sleep(0)
                     continue
+                if until_complete:
+                    LOGGER.info(
+                        "scan pass complete: %d scan(s) processed; "
+                        "no due sources remain",
+                        completed_scans,
+                    )
+                    return completed_scans
 
                 sources = scanner.database.list_sources()
                 future_due = [
@@ -126,6 +145,11 @@ async def run_worker(
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the persistent ATS board scanner")
     parser.add_argument("--once", action="store_true", help="scan one due batch and exit")
+    parser.add_argument(
+        "--until-complete",
+        action="store_true",
+        help="scan every currently due source, then exit",
+    )
     parser.add_argument("--batch-size", type=int, help="maximum sources selected per batch")
     parser.add_argument("--log-level", default="INFO")
     return parser
@@ -135,6 +159,8 @@ def main() -> None:
     args = _parser().parse_args()
     if args.batch_size is not None and args.batch_size <= 0:
         raise SystemExit("--batch-size must be positive")
+    if args.once and args.until_complete:
+        raise SystemExit("--once and --until-complete are mutually exclusive")
     logging.basicConfig(
         level=getattr(logging, args.log_level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -143,10 +169,11 @@ def main() -> None:
         run_worker(
             Settings.from_env(),
             once=args.once,
+            until_complete=args.until_complete,
             batch_size=args.batch_size,
         )
     )
-    if args.once:
+    if args.once or args.until_complete:
         print(f"Completed {count} scan(s).")
 
 

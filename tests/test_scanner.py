@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from datetime import timedelta
 
+import httpx
 import pytest
 
 from ats_finder.config import Settings
@@ -33,6 +35,20 @@ class _ExplodingAdapter:
         raise AssertionError("an excluded source must never be fetched")
 
 
+class _MissingBoardAdapter:
+    provider = "greenhouse"
+
+    async def fetch(self, source, client, settings) -> FetchResult:
+        del source, client, settings
+        request = httpx.Request(
+            "GET", "https://boards-api.greenhouse.io/v1/boards/missing/jobs"
+        )
+        response = httpx.Response(404, request=request)
+        raise httpx.HTTPStatusError(
+            "board not found", request=request, response=response
+        )
+
+
 def test_scan_attempt_returns_freshly_persisted_source_state(
     harness: EngineHarness,
     job_factory: Callable[..., NormalizedJob],
@@ -56,6 +72,28 @@ def test_scan_attempt_returns_freshly_persisted_source_state(
     assert attempt.source.last_successful_scan_at == FIXED_NOW
     assert attempt.source.last_attempted_scan_at == FIXED_NOW
     assert attempt.source.consecutive_failures == 0
+
+
+def test_missing_board_gets_a_low_cost_recovery_check(
+    harness: EngineHarness,
+    monkeypatch,
+) -> None:
+    monkeypatch.setitem(ADAPTERS, "greenhouse", _MissingBoardAdapter())
+
+    async def scan():
+        scanner = BoardScanner(
+            harness.database,
+            Settings(per_host_interval_seconds=0),
+            client=object(),
+            now=lambda: FIXED_NOW,
+        )
+        return await scanner.scan_source(harness.source.id)
+
+    attempt = asyncio.run(scan())
+
+    assert attempt.outcome.status.value == "FAILED"
+    assert attempt.source.consecutive_failures == 1
+    assert attempt.source.next_scan_at == FIXED_NOW + timedelta(days=1)
 
 
 def test_scan_source_rejects_an_excluded_board(

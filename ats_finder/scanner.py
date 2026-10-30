@@ -71,9 +71,24 @@ class BoardScanner:
         if self._owns_client:
             await self.client.aclose()
 
-    def _next_scan(self, completed_at: datetime, failures: int = 0) -> datetime:
+    def _next_scan(
+        self,
+        completed_at: datetime,
+        failures: int = 0,
+        *,
+        failure: BaseException | None = None,
+    ) -> datetime:
         # Request-level retries already happened. Repeated board failures back off
         # across cycles, capped at 32 target intervals so the source is retried.
+        if (
+            isinstance(failure, httpx.HTTPStatusError)
+            and failure.response.status_code in {404, 410}
+        ):
+            # A missing public board is often permanent, but dataset revisions
+            # can lag provider changes. Keep it eligible for a low-cost recovery
+            # check without letting thousands of dead boards dominate scanning.
+            retry_days = 1 if failures <= 1 else 7 if failures == 2 else 30
+            return completed_at + timedelta(days=retry_days)
         multiplier = 1 if failures <= 0 else min(2 ** min(failures, 5), 32)
         return completed_at + timedelta(
             seconds=self.settings.scan_interval_seconds * multiplier
@@ -158,7 +173,9 @@ class BoardScanner:
                     started_at=started_at,
                     completed_at=completed_at,
                     next_scan_at=self._next_scan(
-                        completed_at, source.consecutive_failures + 1
+                        completed_at,
+                        source.consecutive_failures + 1,
+                        failure=exc,
                     ),
                 )
             except Exception as exc:
@@ -171,7 +188,9 @@ class BoardScanner:
                     started_at=started_at,
                     completed_at=completed_at,
                     next_scan_at=self._next_scan(
-                        completed_at, source.consecutive_failures + 1
+                        completed_at,
+                        source.consecutive_failures + 1,
+                        failure=exc,
                     ),
                 )
                 raise
@@ -196,32 +215,11 @@ class BoardScanner:
         current = (now or self._now()).astimezone(timezone.utc)
         if limit is not None and limit <= 0:
             raise ValueError("limit must be positive")
-        sources = [
-            source
-            for source in self.database.list_sources(supported_only=True)
-            if source.next_scan_at is None or source.next_scan_at <= current
-        ]
-
-        interval = float(self.settings.scan_interval_seconds)
-
-        def effective_score(source: ATSSource) -> tuple[float, float, int]:
-            due_from = (
-                source.next_scan_at
-                or source.last_attempted_scan_at
-                or source.imported_at
-                or source.created_at
-            )
-            overdue_intervals = max(0.0, (current - due_from).total_seconds() / interval)
-            # Aging is unbounded: a low-priority board eventually outranks a
-            # repeatedly due high-priority board, preventing permanent starvation.
-            return (
-                source.priority + overdue_intervals,
-                -due_from.timestamp(),
-                -source.id,
-            )
-
-        sources.sort(key=effective_score, reverse=True)
-        return sources if limit is None else sources[:limit]
+        return self.database.due_sources_for_scan(
+            current,
+            interval_seconds=float(self.settings.scan_interval_seconds),
+            limit=limit,
+        )
 
     async def scan_due(self, *, limit: int | None = None) -> list[ScanAttempt]:
         due = self.fair_due_sources(limit=limit)

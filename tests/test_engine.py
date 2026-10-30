@@ -66,7 +66,11 @@ def test_first_run_initializes_baseline_without_claiming_newness(
     assert outcome.previous_complete_scan_id is None
     assert outcome.baseline == ("job-1", "job-2")
     assert outcome.added == ()
-    assert harness.engine.recent_jobs(now=FIXED_NOW) == []
+    recent = harness.engine.recent_jobs(now=FIXED_NOW)
+    assert len(recent) == 2
+    assert {job.discovery_type for job in recent} == {DiscoveryType.BASELINE}
+    assert {job.published_at for job in recent} == {None}
+    assert {job.detection_at for job in recent} == {FIXED_NOW}
     assert {job.discovery_type for job in harness.database.list_jobs()} == {
         DiscoveryType.BASELINE
     }
@@ -153,7 +157,108 @@ def test_description_change_is_recorded_but_not_treated_as_new(
     assert harness.database.list_observations(
         scan_id=outcome.scan_id
     )[0].observation_status is ObservationStatus.CHANGED
-    assert harness.engine.recent_jobs(now=second_at) == []
+    recent = harness.engine.recent_jobs(now=second_at)
+    assert len(recent) == 1
+    assert recent[0].discovery_type is DiscoveryType.BASELINE
+    assert recent[0].published_at is None
+
+
+def test_observation_descriptions_are_resolved_from_immutable_versions(
+    harness: EngineHarness,
+    job_factory: JobFactory,
+) -> None:
+    first = harness.engine.process_complete_scan(
+        harness.source.id,
+        [job_factory("job-1", description="Build Java services.")],
+        completed_at=FIXED_NOW,
+    )
+    second_at = FIXED_NOW + timedelta(hours=1)
+    second = harness.engine.process_complete_scan(
+        harness.source.id,
+        [job_factory("job-1", description="Operate Java 21 services.")],
+        completed_at=second_at,
+    )
+
+    with harness.database.read() as connection:
+        stored_descriptions = [
+            row[0]
+            for row in connection.execute(
+                "SELECT description FROM job_observations ORDER BY id"
+            )
+        ]
+        stored_job_description = connection.execute(
+            "SELECT description FROM jobs"
+        ).fetchone()[0]
+    assert stored_descriptions == ["", ""]
+    assert stored_job_description == ""
+    assert [item.description for item in harness.database.list_observations(
+        job_id=harness.database.get_job_by_external_id(
+            harness.source.id, "job-1"
+        ).id
+    )] == ["Build Java services.", "Operate Java 21 services."]
+    assert [
+        item["description"]
+        for item in harness.database.list_job_events(
+            job_id=harness.database.get_job_by_external_id(
+                harness.source.id, "job-1"
+            ).id
+        )
+    ] == ["Operate Java 21 services.", "Build Java services."]
+    assert first.scan_id != second.scan_id
+
+    with harness.database.transaction() as connection:
+        connection.execute(
+            "UPDATE jobs SET description = 'duplicated current content'"
+        )
+    assert harness.database.compact_job_descriptions(batch_size=1) == 1
+    with harness.database.read() as connection:
+        assert connection.execute(
+            "SELECT description FROM jobs"
+        ).fetchone()[0] == ""
+    job = harness.database.get_job_by_external_id(harness.source.id, "job-1")
+    assert job is not None
+    assert job.description == "Operate Java 21 services."
+
+
+def test_observation_compaction_reclaims_duplicated_descriptions(
+    harness: EngineHarness,
+    job_factory: JobFactory,
+) -> None:
+    harness.engine.process_complete_scan(
+        harness.source.id,
+        [job_factory("job-1", description="Build Java services.")],
+        completed_at=FIXED_NOW,
+    )
+    with harness.database.transaction() as connection:
+        connection.execute(
+            """
+            UPDATE job_observations
+            SET title = 'duplicated title',
+                description = 'duplicated content',
+                location = 'duplicated location',
+                workplace_type = 'REMOTE',
+                canada_remote_eligibility = 1,
+                location_match = 'CONFIRMED',
+                location_reason = 'duplicated reason',
+                java_keyword_match = 1,
+                application_url = 'https://example.invalid/duplicated'
+            """
+        )
+
+    assert harness.database.compact_observation_contents(batch_size=1) == 1
+    with harness.database.read() as connection:
+        row = connection.execute(
+            "SELECT title, description, location FROM job_observations"
+        ).fetchone()
+        assert tuple(row) == ("", "", "")
+    observation = harness.database.list_observations(
+        job_id=harness.database.get_job_by_external_id(
+            harness.source.id, "job-1"
+        ).id
+    )[0]
+    assert observation.title == "Java Developer"
+    assert observation.description == "Build Java services."
+    assert observation.location == "Ottawa, Ontario, Canada"
 
 
 def test_disappearing_job_is_marked_removed(
@@ -207,7 +312,9 @@ def test_disappearing_job_reappears_as_history_not_a_brand_new_job(
     assert harness.database.list_observations(
         scan_id=outcome.scan_id
     )[0].observation_status is ObservationStatus.REAPPEARED
-    assert harness.engine.recent_jobs(now=reappeared_at) == []
+    recent = harness.engine.recent_jobs(now=reappeared_at)
+    assert len(recent) == 1
+    assert recent[0].discovery_type is DiscoveryType.REAPPEARED
 
 
 def test_same_posting_with_new_identifier_is_flagged_as_potential_repost(
@@ -409,7 +516,10 @@ def test_snapshot_gap_over_24_hours_is_time_uncertain_and_not_recent(
     job = harness.database.get_job_by_external_id(harness.source.id, "job-2")
     assert job is not None
     assert job.discovery_type is DiscoveryType.NEWLY_DETECTED_TIME_UNCERTAIN
-    assert harness.engine.recent_jobs(now=completed_at) == []
+    recent = harness.engine.recent_jobs(now=completed_at)
+    assert [item.discovery_type for item in recent] == [
+        DiscoveryType.NEWLY_DETECTED_TIME_UNCERTAIN,
+    ]
 
 
 def test_verified_publication_inside_24_hours_is_recent_on_initial_scan(
@@ -652,7 +762,9 @@ def test_missing_publication_date_remains_an_unverified_baseline(
     assert job.publication_semantics is None
     assert job.publication_is_verified is False
     assert job.discovery_type is DiscoveryType.BASELINE
-    assert harness.engine.recent_jobs(now=FIXED_NOW) == []
+    recent = harness.engine.recent_jobs(now=FIXED_NOW)
+    assert len(recent) == 1
+    assert recent[0].discovery_type is DiscoveryType.BASELINE
 
 
 def test_missing_original_date_can_qualify_by_new_snapshot_discovery(
@@ -684,8 +796,11 @@ def test_missing_original_date_can_qualify_by_new_snapshot_discovery(
     )
 
     recent = harness.engine.recent_jobs(now=detected_at)
-    assert [job.title for job in recent] == ["Senior Java Data Engineer"]
-    assert len(recent) == 1
+    assert [job.title for job in recent] == [
+        "Senior Java Data Engineer",
+        "Java Developer",
+    ]
+    assert len(recent) == 2
     result = recent[0]
     assert result.discovery_type is DiscoveryType.NEWLY_DETECTED
     assert result.published_at is None
@@ -968,8 +1083,11 @@ def test_snapshot_history_persists_across_database_restart(
         added = restarted_database.get_job_by_external_id(source_id, "job-2")
         assert added is not None
         assert added.discovery_type is DiscoveryType.NEWLY_DETECTED
+        baseline = restarted_database.get_job_by_external_id(source_id, "job-1")
+        assert baseline is not None
         assert [job.job_id for job in restarted_engine.recent_jobs(now=second_at)] == [
-            added.id
+            added.id,
+            baseline.id,
         ]
     finally:
         restarted_database.close()

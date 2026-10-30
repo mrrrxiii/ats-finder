@@ -74,3 +74,25 @@ def test_cli_classify_canada_presence(
 
     classified = json.loads(capsys.readouterr().out)
     assert classified == {"some": 0, "none": 0, "unknown": 0}
+
+
+def test_cli_compact_history_reports_compaction(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    database_path = tmp_path / "cli-compact.sqlite3"
+    monkeypatch.setenv("ATS_FINDER_DB", str(database_path))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["ats-finder", "compact-history", "--batch-size", "2"],
+    )
+
+    main()
+
+    report = json.loads(capsys.readouterr().out)
+    assert report["compacted_observations"] == 0
+    assert report["compacted_jobs"] == 0
+    assert report["vacuumed"] is False
+    assert report["size_after_bytes"] > 0

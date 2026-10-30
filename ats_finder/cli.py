@@ -87,6 +87,38 @@ async def _scan_due(args: argparse.Namespace, settings: Settings) -> None:
     _print_json(results)
 
 
+def _compact_history(args: argparse.Namespace, settings: Settings) -> None:
+    before = (
+        settings.database_path.stat().st_size
+        if settings.database_path.exists()
+        else 0
+    )
+    with Database(settings.database_path) as database:
+        compacted_observations = database.compact_observation_contents(
+            batch_size=args.batch_size
+        )
+        compacted_jobs = database.compact_job_descriptions(
+            batch_size=args.batch_size
+        )
+        if args.vacuum:
+            database.vacuum()
+    after = (
+        settings.database_path.stat().st_size
+        if settings.database_path.exists()
+        else 0
+    )
+    _print_json(
+        {
+            "compacted_observations": compacted_observations,
+            "compacted_jobs": compacted_jobs,
+            "vacuumed": args.vacuum,
+            "size_before_bytes": before,
+            "size_after_bytes": after,
+            "reclaimed_bytes": before - after,
+        }
+    )
+
+
 def _add_source(args: argparse.Namespace, settings: Settings) -> None:
     candidate = source_candidate(args.url, args.platform)
     company = args.company or candidate.company
@@ -276,6 +308,17 @@ def _parser() -> argparse.ArgumentParser:
         help="classify boards from active jobs and defer no-Canada boards",
     )
 
+    compact = commands.add_parser(
+        "compact-history",
+        help="remove duplicated job/observation content and optionally VACUUM",
+    )
+    compact.add_argument("--batch-size", type=int, default=500)
+    compact.add_argument(
+        "--vacuum",
+        action="store_true",
+        help="rebuild the database file to return freed pages to disk",
+    )
+
     commands.add_parser("support-report", help="separate support and scan outcomes")
 
     monitor = commands.add_parser(
@@ -363,6 +406,10 @@ def main() -> None:
                 recheck_after=EnginePolicy().no_canada_recheck
             )
         _print_json(classified)
+    elif args.command == "compact-history":
+        if args.batch_size <= 0:
+            parser.error("--batch-size must be positive")
+        _compact_history(args, settings)
     elif args.command == "support-report":
         _support_report(settings)
     elif args.command == "monitor":

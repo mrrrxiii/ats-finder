@@ -10,6 +10,7 @@ from ats_finder.dashboard import (
     DEFAULT_RECENT_WINDOW,
     JOB_DETAIL_SELECTION_KEY,
     RECENT_WINDOW_OPTIONS,
+    _history_frame,
     coverage_progress,
     discovery_label,
     evidence_age_label,
@@ -46,11 +47,17 @@ def test_streamlit_entry_point_renders_all_pages_without_exceptions(
         "Scan Coverage",
         "Job History",
     ]
+    assert app.subheader[2].value == (
+        "Other matching jobs first observed in the last 72 hours"
+    )
     assert app.selectbox(key="recent_window").value == DEFAULT_RECENT_WINDOW
 
     app.selectbox(key="recent_window").set_value("24 hours").run(timeout=10)
     assert not app.exception
     assert app.selectbox(key="recent_window").value == "24 hours"
+    assert app.subheader[2].value == (
+        "Other matching jobs first observed in the last 24 hours"
+    )
 
     for page in ("Scan Coverage", "Job History", "Latest Java Openings"):
         app.radio[0].set_value(page).run(timeout=10)
@@ -61,6 +68,49 @@ def test_recent_window_options_are_ordered_and_include_72_hours() -> None:
     assert DEFAULT_RECENT_WINDOW == "72 hours"
     assert list(RECENT_WINDOW_OPTIONS) == ["24 hours", "72 hours", "7 days", "30 days"]
     assert RECENT_WINDOW_OPTIONS["72 hours"] == timedelta(hours=72)
+
+
+def test_history_filtering_and_limit_run_before_materializing_results(
+    harness: EngineHarness,
+    job_factory: JobFactory,
+) -> None:
+    harness.engine.process_complete_scan(
+        harness.source.id,
+        [
+            job_factory("java", title="Java Engineer", location="Ottawa"),
+            job_factory("python", title="Python Engineer", location="Toronto"),
+        ],
+        completed_at=FIXED_NOW,
+    )
+
+    frame = _history_frame(
+        harness.database,
+        title="java engineer",
+        state="ACTIVE",
+        limit=1,
+    )
+
+    assert frame["Job Title"].tolist() == ["Java Engineer"]
+    assert frame["ATS"].tolist() == ["Greenhouse"]
+
+    ottawa = _history_frame(
+        harness.database,
+        title="engineer",
+        location="ottawa",
+        state="ACTIVE",
+        limit=10,
+    )
+    assert ottawa["Job Title"].tolist() == ["Java Engineer"]
+
+    no_match = _history_frame(
+        harness.database,
+        company="Example Company",
+        title="python",
+        location="ottawa",
+        state="ACTIVE",
+        limit=10,
+    )
+    assert no_match.empty
 
 
 def test_72_hour_window_lists_publication_the_default_policy_hides(
@@ -141,8 +191,9 @@ def test_latest_table_columns_start_with_company_title_publication_and_apply(
 
     row = recent_job_row(job, now=FIXED_NOW)
 
-    assert list(row)[:4] == ["Company", "Job Title", "Published At", "Application URL"]
+    assert list(row)[:4] == ["Company", "Job Title", "Published At", "Job URL"]
     assert list(row)[-1] == "Job ID"
+    assert str(row["Job URL"]).endswith("/verified-job")
 
 
 def _jobs_frame() -> pd.DataFrame:
@@ -346,8 +397,10 @@ def test_snapshot_discovery_dashboard_row_never_labels_first_seen_as_published(
         completed_at=detected_at,
     )
     recent = harness.engine.recent_jobs(now=detected_at)
-    assert len(recent) == 1
-    job = recent[0]
+    assert len(recent) == 2
+    job = next(
+        item for item in recent if item.discovery_type is DiscoveryType.NEWLY_DETECTED
+    )
     assert job.discovery_type is DiscoveryType.NEWLY_DETECTED
 
     display_at = detected_at + timedelta(hours=2)
@@ -362,6 +415,25 @@ def test_snapshot_discovery_dashboard_row_never_labels_first_seen_as_published(
     assert row["Published At"] is None
     assert row["First Seen"] == detected_at
     assert row["Previous Board Scan"] == FIXED_NOW
+
+
+def test_undated_baseline_match_uses_first_observation_as_candidate(
+    harness: EngineHarness,
+    job_factory: JobFactory,
+) -> None:
+    harness.engine.process_complete_scan(
+        harness.source.id,
+        [job_factory("baseline-job", title="Java Platform Engineer")],
+        completed_at=FIXED_NOW,
+    )
+
+    jobs = harness.engine.recent_jobs(now=FIXED_NOW)
+
+    assert len(jobs) == 1
+    assert jobs[0].discovery_type is DiscoveryType.BASELINE
+    assert jobs[0].published_at is None
+    assert jobs[0].detection_at == FIXED_NOW
+    assert evidence_age_label(jobs[0], now=FIXED_NOW) == "First detected 0s ago"
 
 
 def test_coverage_progress_counts_records_only_over_supported_boards() -> None:

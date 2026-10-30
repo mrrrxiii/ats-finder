@@ -33,8 +33,36 @@ from .models import (
 )
 
 
-SCHEMA_VERSION = 5
-_UPGRADABLE_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4})
+SCHEMA_VERSION = 7
+_UPGRADABLE_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4, 5, 6})
+
+_JOB_EVENTS_VIEW_SQL = """
+CREATE VIEW job_events AS
+SELECT
+    o.id AS id,
+    o.id AS observation_id,
+    o.scan_id,
+    o.job_id,
+    o.observation_timestamp AS event_at,
+    o.observation_status AS event_type,
+    o.is_present,
+    o.content_fingerprint,
+    o.discovery_type,
+    o.comparison_scan_id,
+    o.comparison_scan_at,
+    o.snapshot_gap_seconds,
+    o.potential_repost_of_job_id,
+    o.repost_similarity
+FROM job_observations AS o
+"""
+
+_JOB_SELECT_SQL = """
+SELECT j.*, COALESCE(v.description, '') AS resolved_description
+FROM jobs AS j
+LEFT JOIN job_versions AS v
+  ON v.job_id = j.id
+ AND v.content_fingerprint = j.content_fingerprint
+"""
 
 
 def datetime_to_storage(value: datetime | None) -> str | None:
@@ -264,29 +292,6 @@ class Database:
                     UNIQUE (job_id, content_fingerprint)
                 );
 
-                CREATE TABLE IF NOT EXISTS job_events (
-                    id INTEGER PRIMARY KEY,
-                    observation_id INTEGER NOT NULL UNIQUE
-                        REFERENCES job_observations(id) ON DELETE CASCADE,
-                    scan_id INTEGER NOT NULL REFERENCES scan_runs(id) ON DELETE CASCADE,
-                    job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
-                    event_at TEXT NOT NULL,
-                    event_type TEXT NOT NULL,
-                    is_present INTEGER NOT NULL CHECK (is_present IN (0, 1)),
-                    content_fingerprint TEXT NOT NULL,
-                    discovery_type TEXT NOT NULL,
-                    comparison_scan_id INTEGER REFERENCES scan_runs(id),
-                    comparison_scan_at TEXT,
-                    snapshot_gap_seconds REAL CHECK (
-                        snapshot_gap_seconds IS NULL OR snapshot_gap_seconds >= 0
-                    ),
-                    potential_repost_of_job_id INTEGER REFERENCES jobs(id),
-                    repost_similarity REAL CHECK (
-                        repost_similarity IS NULL
-                        OR (repost_similarity >= 0 AND repost_similarity <= 1)
-                    )
-                );
-
                 CREATE TABLE IF NOT EXISTS application_status_history (
                     id INTEGER PRIMARY KEY,
                     job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
@@ -316,22 +321,31 @@ class Database:
                     ON jobs(publication_is_verified, published_at);
                 CREATE INDEX IF NOT EXISTS idx_jobs_recent_discovery
                     ON jobs(discovery_type, discovery_at);
+                CREATE INDEX IF NOT EXISTS idx_jobs_recent_candidates
+                    ON jobs(
+                        potential_repost_of_job_id,
+                        publication_is_verified,
+                        published_at,
+                        discovery_type,
+                        discovery_at
+                    )
+                    WHERE current_state = 'ACTIVE'
+                      AND java_keyword_match = 1
+                      AND location_match = 'CONFIRMED';
+                CREATE INDEX IF NOT EXISTS idx_jobs_last_seen
+                    ON jobs(last_seen_at DESC, id DESC);
                 CREATE INDEX IF NOT EXISTS idx_jobs_repost_link
                     ON jobs(potential_repost_of_job_id);
                 CREATE INDEX IF NOT EXISTS idx_observations_repost_link
                     ON job_observations(potential_repost_of_job_id);
-                CREATE INDEX IF NOT EXISTS idx_job_events_repost_link
-                    ON job_events(potential_repost_of_job_id);
                 CREATE INDEX IF NOT EXISTS idx_observations_scan_present
                     ON job_observations(scan_id, is_present);
                 CREATE INDEX IF NOT EXISTS idx_observations_job_time
                     ON job_observations(job_id, observation_timestamp DESC, id DESC);
+                CREATE INDEX IF NOT EXISTS idx_observations_type_time
+                    ON job_observations(observation_status, observation_timestamp DESC, id DESC);
                 CREATE INDEX IF NOT EXISTS idx_job_versions_job_time
                     ON job_versions(job_id, recorded_at DESC, id DESC);
-                CREATE INDEX IF NOT EXISTS idx_job_events_job_time
-                    ON job_events(job_id, event_at DESC, id DESC);
-                CREATE INDEX IF NOT EXISTS idx_job_events_type_time
-                    ON job_events(event_type, event_at DESC, id DESC);
                 CREATE INDEX IF NOT EXISTS idx_application_history_job_time
                     ON application_status_history(job_id, recorded_at DESC, id DESC);
 
@@ -355,25 +369,6 @@ class Database:
                         NEW.location_reason, NEW.java_keyword_match, NEW.published_at,
                         NEW.publication_source, NEW.publication_semantics,
                         NEW.publication_is_verified, NEW.application_url
-                    );
-                END;
-
-                CREATE TRIGGER IF NOT EXISTS trg_observation_job_event
-                AFTER INSERT ON job_observations
-                BEGIN
-                    INSERT INTO job_events (
-                        observation_id, scan_id, job_id, event_at, event_type,
-                        is_present, content_fingerprint, discovery_type,
-                        comparison_scan_id, comparison_scan_at,
-                        snapshot_gap_seconds, potential_repost_of_job_id,
-                        repost_similarity
-                    ) VALUES (
-                        NEW.id, NEW.scan_id, NEW.job_id,
-                        NEW.observation_timestamp, NEW.observation_status,
-                        NEW.is_present, NEW.content_fingerprint, NEW.discovery_type,
-                        NEW.comparison_scan_id, NEW.comparison_scan_at,
-                        NEW.snapshot_gap_seconds, NEW.potential_repost_of_job_id,
-                        NEW.repost_similarity
                     );
                 END;
 
@@ -429,6 +424,19 @@ class Database:
                         )
                 if existing_version == 1:
                     self._backfill_audit_tables()
+                if existing_version < 7:
+                    self._connection.execute(
+                        "DROP TRIGGER IF EXISTS trg_observation_job_event"
+                    )
+                    event_object = self._connection.execute(
+                        "SELECT type FROM sqlite_master WHERE name = 'job_events'"
+                    ).fetchone()
+                    if event_object is not None:
+                        if event_object["type"] == "view":
+                            self._connection.execute("DROP VIEW job_events")
+                        else:
+                            self._connection.execute("DROP TABLE job_events")
+                    self._connection.execute(_JOB_EVENTS_VIEW_SQL)
                 self._connection.execute(
                     """
                     INSERT INTO schema_metadata(key, value)
@@ -467,24 +475,6 @@ class Database:
             JOIN jobs AS j ON j.id = o.job_id
             WHERE o.is_present = 1
             ORDER BY o.id
-            """
-        )
-        self._connection.execute(
-            """
-            INSERT OR IGNORE INTO job_events (
-                observation_id, scan_id, job_id, event_at, event_type,
-                is_present, content_fingerprint, discovery_type,
-                comparison_scan_id, comparison_scan_at, snapshot_gap_seconds,
-                potential_repost_of_job_id, repost_similarity
-            )
-            SELECT
-                id, scan_id, job_id, observation_timestamp,
-                observation_status, is_present, content_fingerprint,
-                discovery_type, comparison_scan_id, comparison_scan_at,
-                snapshot_gap_seconds, potential_repost_of_job_id,
-                repost_similarity
-            FROM job_observations
-            ORDER BY id
             """
         )
         recorded_at = datetime_to_storage(utc_now())
@@ -529,6 +519,15 @@ class Database:
     def close(self) -> None:
         with self._lock:
             self._connection.close()
+
+    def vacuum(self) -> None:
+        """Rebuild the database file after maintenance deletes freed pages."""
+
+        with self._lock:
+            if self._connection.in_transaction:
+                raise RuntimeError("cannot VACUUM during an open transaction")
+            self._connection.execute("VACUUM")
+            self._connection.execute("PRAGMA optimize")
 
     def __enter__(self) -> Database:
         return self
@@ -578,7 +577,7 @@ class Database:
                     support_status = excluded.support_status,
                     support_reason = excluded.support_reason,
                     next_scan_at = COALESCE(excluded.next_scan_at, ats_sources.next_scan_at),
-                    priority = excluded.priority,
+                    priority = ats_sources.priority,
                     source_url = COALESCE(excluded.source_url, ats_sources.source_url),
                     dataset_name = COALESCE(excluded.dataset_name, ats_sources.dataset_name),
                     dataset_revision = COALESCE(excluded.dataset_revision, ats_sources.dataset_revision),
@@ -680,7 +679,7 @@ class Database:
                     support_status = excluded.support_status,
                     support_reason = excluded.support_reason,
                     next_scan_at = COALESCE(excluded.next_scan_at, ats_sources.next_scan_at),
-                    priority = excluded.priority,
+                    priority = ats_sources.priority,
                     source_url = COALESCE(excluded.source_url, ats_sources.source_url),
                     dataset_name = COALESCE(excluded.dataset_name, ats_sources.dataset_name),
                     dataset_revision = COALESCE(excluded.dataset_revision, ats_sources.dataset_revision),
@@ -1044,15 +1043,91 @@ class Database:
             limit=limit,
         )
 
+    def due_sources_for_scan(
+        self,
+        now: datetime,
+        *,
+        interval_seconds: float,
+        limit: int | None = None,
+    ) -> list[ATSSource]:
+        """Select due supported boards and rank them directly in SQLite.
+
+        Boards with confirmed Canadian presence receive a scheduling bonus,
+        followed by boards that have not yet been classified. The configured
+        source priority remains authoritative and can still outrank both.
+        """
+
+        if interval_seconds <= 0:
+            raise ValueError("interval_seconds must be positive")
+        if limit is not None and limit <= 0:
+            raise ValueError("limit must be positive")
+        current = datetime_to_storage(as_utc(now))
+        removed_providers = sorted(REMOVED_PROVIDERS)
+        parameters: list[object] = [
+            current,
+            *removed_providers,
+            current,
+            interval_seconds,
+        ]
+        query = f"""
+            SELECT s.*
+            FROM ats_sources AS s
+            WHERE s.support_status = 'SUPPORTED'
+              AND (s.next_scan_at IS NULL OR s.next_scan_at <= ?)
+              AND s.provider NOT IN ({", ".join("?" for _ in removed_providers)})
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM source_exclusions AS e
+                  WHERE e.provider = s.provider
+                    AND e.board_identifier = s.board_identifier
+              )
+            ORDER BY (
+                s.priority
+                + CASE s.canada_presence
+                    WHEN 'SOME' THEN 200.0
+                    WHEN 'UNKNOWN' THEN 100.0
+                    ELSE 0.0
+                  END
+                + MAX(
+                    0.0,
+                    (
+                        julianday(?) - julianday(COALESCE(
+                            s.next_scan_at,
+                            s.last_attempted_scan_at,
+                            s.imported_at,
+                            s.created_at
+                        ))
+                    ) * 86400.0 / ?
+                  )
+            ) DESC,
+            COALESCE(
+                s.next_scan_at,
+                s.last_attempted_scan_at,
+                s.imported_at,
+                s.created_at
+            ) ASC,
+            s.id DESC
+        """
+        if limit is not None:
+            query += " LIMIT ?"
+            parameters.append(limit)
+        with self.read() as connection:
+            rows = connection.execute(query, tuple(parameters)).fetchall()
+        return [self._source_from_row(row) for row in rows]
+
     def get_job(self, job_id: int) -> JobRecord | None:
         with self.read() as connection:
-            row = connection.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+            row = connection.execute(
+                _JOB_SELECT_SQL + " WHERE j.id = ?",
+                (job_id,),
+            ).fetchone()
         return None if row is None else self._job_from_row(row)
 
     def get_job_by_external_id(self, source_id: int, provider_job_id: str) -> JobRecord | None:
         with self.read() as connection:
             row = connection.execute(
-                "SELECT * FROM jobs WHERE source_id = ? AND provider_job_id = ?",
+                _JOB_SELECT_SQL
+                + " WHERE j.source_id = ? AND j.provider_job_id = ?",
                 (source_id, provider_job_id),
             ).fetchone()
         return None if row is None else self._job_from_row(row)
@@ -1071,10 +1146,15 @@ class Database:
         if state is not None:
             clauses.append("current_state = ?")
             parameters.append(JobState(state).value)
-        query = "SELECT * FROM jobs"
+        query = _JOB_SELECT_SQL
         if clauses:
-            query += " WHERE " + " AND ".join(clauses)
-        query += " ORDER BY first_seen_at DESC, id DESC"
+            query += " WHERE " + " AND ".join(
+                clause.replace("source_id =", "j.source_id =").replace(
+                    "current_state =", "j.current_state ="
+                )
+                for clause in clauses
+            )
+        query += " ORDER BY j.first_seen_at DESC, j.id DESC"
         with self.read() as connection:
             rows = connection.execute(query, tuple(parameters)).fetchall()
         return [self._job_from_row(row) for row in rows]
@@ -1095,7 +1175,7 @@ class Database:
         timestamp = as_utc(now) if now is not None else utc_now()
         with self.transaction() as connection:
             existing = connection.execute(
-                "SELECT * FROM jobs WHERE id = ?",
+                _JOB_SELECT_SQL + " WHERE j.id = ?",
                 (job_id,),
             ).fetchone()
             if existing is None:
@@ -1108,7 +1188,10 @@ class Database:
             )
             if cursor.rowcount != 1:  # pragma: no cover - selected in this transaction
                 raise RuntimeError(f"application status update lost job id {job_id}")
-            row = connection.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+            row = connection.execute(
+                _JOB_SELECT_SQL + " WHERE j.id = ?",
+                (job_id,),
+            ).fetchone()
         assert row is not None
         return self._job_from_row(row)
 
@@ -1167,15 +1250,55 @@ class Database:
         clauses: list[str] = []
         parameters: list[object] = []
         if scan_id is not None:
-            clauses.append("scan_id = ?")
+            clauses.append("o.scan_id = ?")
             parameters.append(scan_id)
         if job_id is not None:
-            clauses.append("job_id = ?")
+            clauses.append("o.job_id = ?")
             parameters.append(job_id)
         query = (
-            "SELECT * FROM job_observations WHERE "
+            """
+            SELECT
+                o.id, o.scan_id, o.job_id, o.observation_timestamp,
+                o.observation_status, o.is_present, o.content_fingerprint,
+                o.discovery_type, o.comparison_scan_id, o.comparison_scan_at,
+                o.snapshot_gap_seconds,
+                COALESCE(NULLIF(o.title, ''), v.title, '') AS title,
+                COALESCE(NULLIF(o.description, ''), v.description, '') AS description,
+                CASE WHEN o.title = '' THEN v.location ELSE o.location END
+                    AS location,
+                CASE WHEN o.title = '' THEN v.workplace_type ELSE o.workplace_type END
+                    AS workplace_type,
+                CASE WHEN o.title = '' THEN v.canada_remote_eligibility
+                     ELSE o.canada_remote_eligibility END
+                    AS canada_remote_eligibility,
+                CASE WHEN o.title = '' THEN v.location_match ELSE o.location_match END
+                    AS location_match,
+                CASE WHEN o.title = '' THEN v.location_reason ELSE o.location_reason END
+                    AS location_reason,
+                CASE WHEN o.title = '' THEN v.java_keyword_match
+                     ELSE o.java_keyword_match END
+                    AS java_keyword_match,
+                CASE WHEN o.title = '' THEN v.published_at ELSE o.published_at END
+                    AS published_at,
+                CASE WHEN o.title = '' THEN v.publication_source
+                     ELSE o.publication_source END
+                    AS publication_source,
+                CASE WHEN o.title = '' THEN v.publication_semantics
+                     ELSE o.publication_semantics END
+                    AS publication_semantics,
+                CASE WHEN o.title = '' THEN v.publication_is_verified
+                     ELSE o.publication_is_verified END
+                    AS publication_is_verified,
+                CASE WHEN o.title = '' THEN v.application_url ELSE o.application_url END
+                    AS application_url,
+                o.potential_repost_of_job_id, o.repost_similarity
+            FROM job_observations AS o
+            LEFT JOIN job_versions AS v
+              ON v.job_id = o.job_id
+             AND v.content_fingerprint = o.content_fingerprint
+            WHERE """
             + " AND ".join(clauses)
-            + " ORDER BY observation_timestamp, id"
+            + " ORDER BY o.observation_timestamp, o.id"
         )
         with self.read() as connection:
             rows = connection.execute(query, tuple(parameters)).fetchall()
@@ -1248,15 +1371,17 @@ class Database:
             parameters.append(ObservationStatus(event_type).value)
         query = """
             SELECT e.*, j.source_id, j.provider_job_id, j.company,
-                   j.application_status, o.title, o.description, o.location,
-                   o.workplace_type, o.location_match, o.location_reason,
-                   o.java_keyword_match, o.published_at,
-                   o.publication_source, o.publication_semantics,
-                   o.publication_is_verified, o.application_url,
+                   j.application_status, v.title, v.description, v.location,
+                   v.workplace_type, v.location_match, v.location_reason,
+                   v.java_keyword_match, v.published_at,
+                   v.publication_source, v.publication_semantics,
+                   v.publication_is_verified, v.application_url,
                    s.provider, s.board_identifier
             FROM job_events AS e
             JOIN jobs AS j ON j.id = e.job_id
-            JOIN job_observations AS o ON o.id = e.observation_id
+            LEFT JOIN job_versions AS v
+              ON v.job_id = e.job_id
+             AND v.content_fingerprint = e.content_fingerprint
             JOIN ats_sources AS s ON s.id = j.source_id
         """
         if clauses:
@@ -1285,6 +1410,84 @@ class Database:
             event_type=event_type,
             limit=limit,
         )
+
+    def compact_observation_contents(self, *, batch_size: int = 500) -> int:
+        """Replace duplicated observation content with its immutable version."""
+
+        if batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+        compacted = 0
+        while True:
+            with self.transaction() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT o.id
+                    FROM job_observations AS o
+                    JOIN job_versions AS v
+                      ON v.job_id = o.job_id
+                     AND v.content_fingerprint = o.content_fingerprint
+                    WHERE o.title <> ''
+                    ORDER BY o.id
+                    LIMIT ?
+                    """,
+                    (batch_size,),
+                ).fetchall()
+                if not rows:
+                    return compacted
+                connection.executemany(
+                    """
+                    UPDATE job_observations
+                    SET title = '', description = '', location = '',
+                        workplace_type = 'UNKNOWN',
+                        canada_remote_eligibility = NULL,
+                        location_match = 'REJECTED',
+                        location_reason = '', java_keyword_match = 0,
+                        published_at = NULL, publication_source = NULL,
+                        publication_semantics = NULL,
+                        publication_is_verified = 0, application_url = ''
+                    WHERE id = ?
+                    """,
+                    ((int(row["id"]),) for row in rows),
+                )
+            compacted += len(rows)
+            if len(rows) < batch_size:
+                return compacted
+
+    def compact_observation_descriptions(self, *, batch_size: int = 500) -> int:
+        """Compatibility alias for :meth:`compact_observation_contents`."""
+
+        return self.compact_observation_contents(batch_size=batch_size)
+
+    def compact_job_descriptions(self, *, batch_size: int = 500) -> int:
+        """Clear current-job descriptions that resolve from immutable versions."""
+
+        if batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+        compacted = 0
+        while True:
+            with self.transaction() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT j.id
+                    FROM jobs AS j
+                    JOIN job_versions AS v
+                      ON v.job_id = j.id
+                     AND v.content_fingerprint = j.content_fingerprint
+                    WHERE j.description <> ''
+                    ORDER BY j.id
+                    LIMIT ?
+                    """,
+                    (batch_size,),
+                ).fetchall()
+                if not rows:
+                    return compacted
+                connection.executemany(
+                    "UPDATE jobs SET description = '' WHERE id = ?",
+                    ((int(row["id"]),) for row in rows),
+                )
+            compacted += len(rows)
+            if len(rows) < batch_size:
+                return compacted
 
     def list_application_status_history(
         self,
@@ -1449,7 +1652,11 @@ class Database:
             provider_job_id=row["provider_job_id"],
             company=row["company"],
             title=row["title"],
-            description=row["description"],
+            description=(
+                row["resolved_description"]
+                if "resolved_description" in row.keys()
+                else row["description"]
+            ),
             location=row["location"],
             workplace_type=WorkplaceType(row["workplace_type"]),
             canada_remote_eligibility=_optional_bool(row["canada_remote_eligibility"]),
