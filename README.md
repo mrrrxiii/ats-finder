@@ -224,7 +224,11 @@ audited.
 - **Latest Java Openings** separates verified publication evidence from
   snapshot detection and first-observation evidence, supports the required
   evidence-specific sort, exports CSV, displays job details, links only to
-  canonical official job-description URLs, and updates application status. The evidence window is selectable
+  canonical official job-description URLs, and updates application status.
+  A single plain-language **Status** column distinguishes verified ATS
+  publication, an observed repost, a new-to-site snapshot discovery, a relisted
+  job, and a first-seen baseline record. An on-page legend explains each label.
+  The evidence window is selectable
   (24 hours, 72 hours, 7 days, 30 days) and defaults to 72 hours; only rows
   whose verified publication or snapshot detection falls inside that window are
   listed. Clicking a table row or choosing from the "Job detail" picker selects
@@ -331,6 +335,10 @@ or incomplete scan records. `worker.py` supplies recurring fair scheduling.
 
 The schema is documented in [docs/SCHEMA.md](docs/SCHEMA.md); executable DDL and
 migration logic live in `ats_finder/db.py`.
+
+The proposed scope, architecture, retention rules, filtering requirements, and
+launch acceptance criteria for the read-only public information platform are in
+[docs/PUBLIC_LAUNCH_PLAN.md](docs/PUBLIC_LAUNCH_PLAN.md).
 
 ## Tests
 

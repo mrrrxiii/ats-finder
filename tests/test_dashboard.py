@@ -14,6 +14,9 @@ from ats_finder.dashboard import (
     coverage_progress,
     discovery_label,
     evidence_age_label,
+    freshness_cell_style,
+    freshness_label,
+    posting_status_label,
     recent_job_row,
     row_pick_job_id,
 )
@@ -47,17 +50,16 @@ def test_streamlit_entry_point_renders_all_pages_without_exceptions(
         "Scan Coverage",
         "Job History",
     ]
-    assert app.subheader[2].value == (
-        "Other matching jobs first observed in the last 72 hours"
-    )
+    assert [item.value for item in app.subheader[:3]] == [
+        "Posted dates from the ATS",
+        "New to this site",
+        "First observed by this site",
+    ]
     assert app.selectbox(key="recent_window").value == DEFAULT_RECENT_WINDOW
 
     app.selectbox(key="recent_window").set_value("24 hours").run(timeout=10)
     assert not app.exception
     assert app.selectbox(key="recent_window").value == "24 hours"
-    assert app.subheader[2].value == (
-        "Other matching jobs first observed in the last 24 hours"
-    )
 
     for page in ("Scan Coverage", "Job History", "Latest Java Openings"):
         app.radio[0].set_value(page).run(timeout=10)
@@ -245,10 +247,96 @@ def test_verified_recent_dashboard_row_labels_publication_evidence(
     assert discovery_label(job.discovery_type) == "Verified recent publication"
     assert evidence_age_label(job, now=FIXED_NOW) == "Published 2h ago"
     row = recent_job_row(job, now=FIXED_NOW)
-    assert row["Discovery Type"] == "Verified recent publication"
-    assert row["Evidence Age"] == "Published 2h ago"
+    assert posting_status_label(job) == "New posting"
+    assert row["Status"] == "New posting · 2h ago"
     assert row["Published At"] == published_at
-    assert row["First Seen"] == FIXED_NOW
+    assert row["First Detected"] == FIXED_NOW
+
+
+def test_republished_job_is_marked_as_not_brand_new(
+    harness: EngineHarness,
+    job_factory: JobFactory,
+) -> None:
+    first_seen = FIXED_NOW - timedelta(days=2)
+    harness.engine.process_complete_scan(
+        harness.source.id,
+        [
+            job_factory(
+                "republished-job",
+                published_at=FIXED_NOW - timedelta(days=10),
+                publication_source="Official fixture publishedAt field",
+                publication_semantics=PublicationSemantics.REPUBLICATION,
+                publication_is_verified=True,
+            )
+        ],
+        completed_at=first_seen,
+    )
+    detected_at = FIXED_NOW
+    harness.engine.process_complete_scan(
+        harness.source.id,
+        [
+            job_factory(
+                "republished-job",
+                published_at=FIXED_NOW - timedelta(hours=1),
+                publication_source="Official fixture publishedAt field",
+                publication_semantics=PublicationSemantics.REPUBLICATION,
+                publication_is_verified=True,
+            )
+        ],
+        completed_at=detected_at,
+    )
+
+    job = harness.engine.recent_jobs(now=FIXED_NOW)[0]
+    row = recent_job_row(job, now=FIXED_NOW)
+
+    assert job.first_seen_at == first_seen
+    assert job.discovery_type is DiscoveryType.VERIFIED_RECENT
+    assert posting_status_label(job) == "Reposted"
+    assert evidence_age_label(job, now=FIXED_NOW) == "Republished 1h ago"
+    assert freshness_label(job, now=FIXED_NOW) == "Reposted · 1h ago"
+    assert row["Status"] == "Reposted · 1h ago"
+
+
+def test_first_observed_ashby_publication_is_a_new_posting(
+    harness: EngineHarness,
+    job_factory: JobFactory,
+) -> None:
+    first_seen = FIXED_NOW - timedelta(hours=2)
+    harness.engine.process_complete_scan(
+        harness.source.id,
+        [
+            job_factory(
+                "first-seen",
+                published_at=FIXED_NOW - timedelta(hours=12),
+                publication_source="Official fixture publishedAt field",
+                publication_semantics=PublicationSemantics.REPUBLICATION,
+                publication_is_verified=True,
+            )
+        ],
+        completed_at=first_seen,
+    )
+
+    job = harness.engine.recent_jobs(now=FIXED_NOW)[0]
+
+    assert posting_status_label(job) == "New posting"
+    assert freshness_label(job, now=FIXED_NOW) == "New posting · 12h ago"
+
+
+def test_freshness_labels_have_distinct_supplementary_colors() -> None:
+    labels = [
+        "New posting · 1h ago",
+        "Reposted · 1h ago",
+        "Relisted · 1h ago",
+        "New to this site · 1h ago",
+        "New to this site · timing uncertain · 1h ago",
+        "First seen here · 1h ago",
+    ]
+
+    styles = [freshness_cell_style(label) for label in labels]
+
+    assert all(styles)
+    assert len(set(styles)) == len(styles)
+    assert freshness_cell_style("Unknown") == ""
 
 
 def test_latest_table_columns_start_with_company_title_publication_and_apply(
@@ -490,12 +578,12 @@ def test_snapshot_discovery_dashboard_row_never_labels_first_seen_as_published(
     )
     assert evidence_age_label(job, now=display_at) == "First detected 2h ago"
     row = recent_job_row(job, now=display_at)
-    assert row["Discovery Type"] == "Newly detected by snapshot comparison"
-    assert row["Evidence Age"] == "First detected 2h ago"
-    assert "Published" not in str(row["Evidence Age"])
+    assert posting_status_label(job) == "New to this site"
+    assert row["Status"] == "New to this site · 2h ago"
+    assert "Published" not in str(row["Status"])
     assert row["Published At"] is None
-    assert row["First Seen"] == detected_at
-    assert row["Previous Board Scan"] == FIXED_NOW
+    assert row["First Detected"] == detected_at
+    assert job.previous_board_scan_at == FIXED_NOW
 
 
 def test_undated_baseline_match_uses_first_observation_as_candidate(
@@ -515,6 +603,7 @@ def test_undated_baseline_match_uses_first_observation_as_candidate(
     assert jobs[0].published_at is None
     assert jobs[0].detection_at == FIXED_NOW
     assert evidence_age_label(jobs[0], now=FIXED_NOW) == "First detected 0s ago"
+    assert freshness_label(jobs[0], now=FIXED_NOW) == "First seen here · 0s ago"
 
 
 def test_coverage_progress_counts_records_only_over_supported_boards() -> None:

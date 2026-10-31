@@ -14,6 +14,7 @@ from ats_finder.models import (
     ApplicationStatus,
     DiscoveryType,
     EnginePolicy,
+    PublicationSemantics,
     RecentJob,
     SourceLastScanResult,
     SourceSupportStatus,
@@ -31,6 +32,33 @@ DEFAULT_RECENT_WINDOW = "72 hours"
 
 JOB_DETAIL_SELECTION_KEY = "job_detail_selection"
 ROW_PICK_STATE_KEY = "job_detail_row_pick"
+
+_FRESHNESS_STYLES = (
+    (
+        "New posting",
+        "background-color: #dcfce7; color: #166534; font-weight: 600;",
+    ),
+    (
+        "Reposted",
+        "background-color: #fef3c7; color: #92400e; font-weight: 600;",
+    ),
+    (
+        "New to this site · timing uncertain",
+        "background-color: #ffedd5; color: #9a3412; font-weight: 600;",
+    ),
+    (
+        "Relisted",
+        "background-color: #ede9fe; color: #5b21b6; font-weight: 600;",
+    ),
+    (
+        "New to this site",
+        "background-color: #dbeafe; color: #1e40af; font-weight: 600;",
+    ),
+    (
+        "First seen here",
+        "background-color: #f3f4f6; color: #374151; font-weight: 600;",
+    ),
+)
 
 
 DISCOVERY_LABELS = {
@@ -67,7 +95,12 @@ def evidence_age_label(job: RecentJob, *, now: datetime | None = None) -> str:
     if job.discovery_type is DiscoveryType.VERIFIED_RECENT:
         if job.published_at is None:
             raise ValueError("VERIFIED_RECENT job is missing its publication timestamp")
-        return f"Published {_age(job.published_at, current)}"
+        action = (
+            "Republished"
+            if job.publication_semantics is PublicationSemantics.REPUBLICATION
+            else "Published"
+        )
+        return f"{action} {_age(job.published_at, current)}"
     if job.discovery_type in {
         DiscoveryType.BASELINE,
         DiscoveryType.NEWLY_DETECTED,
@@ -78,6 +111,48 @@ def evidence_age_label(job: RecentJob, *, now: datetime | None = None) -> str:
     return discovery_label(job.discovery_type)
 
 
+def posting_status_label(job: RecentJob) -> str:
+    if (
+        job.publication_semantics is PublicationSemantics.REPUBLICATION
+        and job.published_at is not None
+        and job.published_at > job.first_seen_at
+    ):
+        return "Reposted"
+    if job.discovery_type is DiscoveryType.REAPPEARED:
+        return "Relisted"
+    if job.discovery_type is DiscoveryType.VERIFIED_RECENT:
+        return "New posting"
+    if job.discovery_type is DiscoveryType.NEWLY_DETECTED:
+        return "New to this site"
+    if job.discovery_type is DiscoveryType.NEWLY_DETECTED_TIME_UNCERTAIN:
+        return "New to this site · timing uncertain"
+    if job.discovery_type is DiscoveryType.BASELINE:
+        return "First seen here"
+    return discovery_label(job.discovery_type)
+
+
+def freshness_label(job: RecentJob, *, now: datetime | None = None) -> str:
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    status = posting_status_label(job)
+    if job.discovery_type is DiscoveryType.VERIFIED_RECENT:
+        if job.published_at is None:
+            raise ValueError("VERIFIED_RECENT job is missing its publication timestamp")
+        return f"{status} · {_age(job.published_at, current)}"
+    return f"{status} · {_age(job.detection_at, current)}"
+
+
+def freshness_cell_style(value: object) -> str:
+    text = str(value)
+    for prefix, style in sorted(
+        _FRESHNESS_STYLES,
+        key=lambda item: len(item[0]),
+        reverse=True,
+    ):
+        if text.startswith(prefix):
+            return style
+    return ""
+
+
 def recent_job_row(job: RecentJob, *, now: datetime | None = None) -> dict[str, object]:
     return {
         "Company": job.company,
@@ -86,12 +161,10 @@ def recent_job_row(job: RecentJob, *, now: datetime | None = None) -> dict[str, 
         "Job URL": job_detail_url(job.application_url),
         "Location": job.location,
         "Work Mode": job.workplace_type.value.title(),
-        "Discovery Type": discovery_label(job.discovery_type),
-        "Evidence Age": evidence_age_label(job, now=now),
-        "First Seen": job.first_seen_at,
-        "Previous Board Scan": job.previous_board_scan_at,
-        "ATS": job.provider.title(),
+        "Status": freshness_label(job, now=now),
+        "First Detected": job.first_seen_at,
         "Application Status": job.application_status.value,
+        "_Discovery Type": job.discovery_type.value,
         "Job ID": job.job_id,
     }
 
@@ -122,9 +195,17 @@ def _render_job_table(
     if frame.empty:
         st.info("No jobs meet this section's confirmed evidence rules.")
         return
-    visible = frame.drop(columns=["Job ID"], errors="ignore")
+    visible = frame.drop(
+        columns=["Job ID", "_Discovery Type"],
+        errors="ignore",
+    )
+    rendered = (
+        visible.style.map(freshness_cell_style, subset=["Status"])
+        if "Status" in visible.columns
+        else visible
+    )
     event = st.dataframe(
-        visible,
+        rendered,
         width="stretch",
         hide_index=True,
         on_select="rerun",
@@ -136,11 +217,8 @@ def _render_job_table(
             "Published At": st.column_config.DatetimeColumn(
                 "Published At (verified)", format="YYYY-MM-DD HH:mm [UTC]"
             ),
-            "First Seen": st.column_config.DatetimeColumn(
-                "First Seen", format="YYYY-MM-DD HH:mm [UTC]"
-            ),
-            "Previous Board Scan": st.column_config.DatetimeColumn(
-                "Previous Board Scan", format="YYYY-MM-DD HH:mm [UTC]"
+            "First Detected": st.column_config.DatetimeColumn(
+                "First detected", format="YYYY-MM-DD HH:mm [UTC]"
             ),
         },
         key=f"table_{key}",
@@ -202,19 +280,19 @@ def latest_page(database: Database, settings: Settings) -> None:
     frame = _frame(rows)
 
     verified = frame[
-        frame.get("Discovery Type", pd.Series(dtype=str))
-        == discovery_label(DiscoveryType.VERIFIED_RECENT)
+        frame.get("_Discovery Type", pd.Series(dtype=str))
+        == DiscoveryType.VERIFIED_RECENT.value
     ] if not frame.empty else frame
     detected = frame[
-        frame.get("Discovery Type", pd.Series(dtype=str))
-        == discovery_label(DiscoveryType.NEWLY_DETECTED)
+        frame.get("_Discovery Type", pd.Series(dtype=str))
+        == DiscoveryType.NEWLY_DETECTED.value
     ] if not frame.empty else frame
     first_observed = frame[
-        frame.get("Discovery Type", pd.Series(dtype=str)).isin(
+        frame.get("_Discovery Type", pd.Series(dtype=str)).isin(
             [
-                discovery_label(DiscoveryType.BASELINE),
-                discovery_label(DiscoveryType.NEWLY_DETECTED_TIME_UNCERTAIN),
-                discovery_label(DiscoveryType.REAPPEARED),
+                DiscoveryType.BASELINE.value,
+                DiscoveryType.NEWLY_DETECTED_TIME_UNCERTAIN.value,
+                DiscoveryType.REAPPEARED.value,
             ]
         )
     ] if not frame.empty else frame
@@ -224,29 +302,29 @@ def latest_page(database: Database, settings: Settings) -> None:
         if st.session_state.get(JOB_DETAIL_SELECTION_KEY) != str(job_id):
             st.session_state[JOB_DETAIL_SELECTION_KEY] = str(job_id)
 
-    st.subheader("Verified recent publication")
+    st.subheader("Posted dates from the ATS")
     st.caption(
         "The ATS exposes a documented publication or republication timestamp inside "
-        f"the last {window_label}."
+        f"the last {window_label}. A job is reposted only when its ATS "
+        "publication timestamp advances after this site first detects it."
     )
     _render_job_table(
         verified, key="verified_recent_java_jobs", on_row_pick=_select_job
     )
 
     snapshot_gap_hours = engine.policy.snapshot_max_gap.total_seconds() / 3600
-    st.subheader("Newly detected by snapshot comparison")
+    st.subheader("New to this site")
     st.caption(
-        "These jobs were absent from the preceding complete board snapshot, taken no "
-        f"more than {snapshot_gap_hours:g} hours earlier, and were first observed inside "
-        f"the last {window_label}. This is observation evidence, not a publication date."
+        "These jobs were absent from the preceding complete board snapshot. This "
+        "means they are new to this site, not necessarily newly published by the "
+        f"employer. Valid comparisons use a prior snapshot no more than "
+        f"{snapshot_gap_hours:g} hours older."
     )
     _render_job_table(
         detected, key="newly_detected_java_jobs", on_row_pick=_select_job
     )
 
-    st.subheader(
-        f"Other matching jobs first observed in the last {window_label}"
-    )
+    st.subheader("First observed by this site")
     st.caption(
         "These jobs match the Java and location filters but have no verified "
         f"publication time. Their first observation is within the same "
@@ -256,6 +334,23 @@ def latest_page(database: Database, settings: Settings) -> None:
     _render_job_table(
         first_observed, key="first_observed_java_jobs", on_row_pick=_select_job
     )
+
+    with st.expander("What do job statuses mean?"):
+        st.markdown(
+            """
+            - **New posting:** the job has a verified recent ATS publication
+              timestamp and no observed later repost.
+            - **Reposted:** the same stable job ID was detected earlier, and the
+              ATS publication timestamp later advanced.
+            - **New to this site:** the job appeared in a later complete snapshot,
+              but no verified publication date is available.
+            - **New to this site · timing uncertain:** the comparison gap was too
+              old to establish reliable snapshot newness.
+            - **Relisted:** a previously removed job ID appeared again.
+            - **First seen here:** the job was present during the initial baseline
+              scan and has no verified publication date.
+            """
+        )
 
     if jobs:
         st.subheader("Job detail")
@@ -271,9 +366,22 @@ def latest_page(database: Database, settings: Settings) -> None:
             help="Click a table row or pick a job here; this panel keeps your choice "
             "while new results arrive.",
         )
+        selected_job = next(
+            job for job in jobs if job.job_id == int(selected_id)
+        )
         record = database.get_job(int(selected_id))
         if record is not None:
             st.markdown(f"### {record.title}")
+            if (
+                posting_status_label(selected_job) == "Reposted"
+                and selected_job.published_at is not None
+            ):
+                st.warning(
+                    "This posting was published again after we first detected it. "
+                    "It is not necessarily a new role. "
+                    f"Latest ATS publication: {selected_job.published_at:%Y-%m-%d %H:%M UTC}; "
+                    f"first detected: {selected_job.first_seen_at:%Y-%m-%d %H:%M UTC}."
+                )
             st.write(record.description or "No description was returned by the ATS.")
             st.link_button("Open job description", job_detail_url(record.application_url))
             _application_editor(database, record.id, record.application_status)
@@ -584,7 +692,9 @@ def _history_frame(
             connection,
             params=tuple(parameters),
         )
-    frame["First Seen"] = pd.to_datetime(frame["first_seen_at"], utc=True, format="mixed")
+    frame["First Detected"] = pd.to_datetime(
+        frame["first_seen_at"], utc=True, format="mixed"
+    )
     frame["Last Seen"] = pd.to_datetime(frame["last_seen_at"], utc=True, format="mixed")
     frame["Discovery"] = frame["discovery_type"].map(discovery_label)
     frame["Java"] = frame["java_keyword_match"].astype(bool)
@@ -608,7 +718,7 @@ def _history_frame(
             "Job Title",
             "Location",
             "Job URL",
-            "First Seen",
+            "First Detected",
             "Last Seen",
             "State",
             "Discovery",
