@@ -18,9 +18,34 @@ _EXCLUDED_TITLE_RE = re.compile(
 _LEAD_TITLE_RE = re.compile(r"lead", re.IGNORECASE)
 
 _OTTAWA_RE = re.compile(r"\b(?:ottawa|kanata|stittsville)\b", re.IGNORECASE)
-_CANADA_LOCATION_RE = re.compile(r"\b(?:canada|canadian|ontario)\b", re.IGNORECASE)
+_CANADA_REGION_PATTERN = (
+    r"(?:canada|canadian|ontario|quebec|québec|british\s+columbia|"
+    r"alberta|manitoba|saskatchewan|nova\s+scotia|new\s+brunswick|"
+    r"newfoundland(?:\s+and\s+labrador)?|prince\s+edward\s+island)"
+)
+_CANADA_LOCATION_RE = re.compile(
+    rf"\b{_CANADA_REGION_PATTERN}\b",
+    re.IGNORECASE,
+)
+_CANADA_CITY_RE = re.compile(
+    r"\b(?:"
+    r"vancouver|calgary|edmonton|winnipeg|montreal|montréal|"
+    r"halifax|quebec\s+city|ville\s+de\s+québec|"
+    r"regina|saskatoon|st\.?\s+john'?s|fredericton|moncton|"
+    r"charlottetown"
+    r")\b",
+    re.IGNORECASE,
+)
+_ONTARIO_CITY_RE = re.compile(
+    r"\b(?:"
+    r"ajax|brampton|etobicoke|guelph|kitchener|markham|mississauga|"
+    r"north\s+york|oakville|oshawa|ottawa|pickering|richmond\s+hill|"
+    r"scarborough|stittsville|sudbury|thunder\s+bay|toronto|vaughan|whitby"
+    r")\b",
+    re.IGNORECASE,
+)
 _REMOTE_RE = re.compile(
-    r"\b(?:remote|work(?:ing)?\s+from\s+home|home[- ]based|telecommut(?:e|ing))\b",
+    r"\b(?:remote(?:ly)?|work(?:ing)?\s+from\s+home|home[- ]based|telecommut(?:e|ing))\b",
     re.IGNORECASE,
 )
 _HYBRID_RE = re.compile(r"\bhybrid\b", re.IGNORECASE)
@@ -42,38 +67,54 @@ _CANADA_REMOTE_PATTERNS = (
     # "Remote Ontario", "Remote from Canada". Incidental phrases such as
     # "remote) Working model: ... US & Canada-based team" do not match.
     re.compile(
-        r"\bremote\b\s*[-,–—(|/)]?\s*(?:in|from|within|across)?\s*"
-        r"(?:canada|canadian|ontario)\b",
+        rf"\bremote\b\s*[-,–—(|/)]?\s*(?:in|from|within|across)?\s*"
+        rf"(?:(?:the\s+)?(?:province|territory)\s+of\s+)?"
+        rf"{_CANADA_REGION_PATTERN}\b",
         re.IGNORECASE,
     ),
     # Reverse location-style: "Canada (Remote)", "Canada - Remote".
     re.compile(
-        r"\b(?:canada|canadian|ontario)\b\s*[-,–—(|/)]?\s*remote\b",
+        rf"\b{_CANADA_REGION_PATTERN}\b\s*[-,–—(|/)]?\s*remote\b",
         re.IGNORECASE,
     ),
-    re.compile(r"\banywhere\s+(?:within|in|across)\s+canada\b", re.IGNORECASE),
-    re.compile(r"\bwork(?:ing)?\s+from\s+(?:anywhere\s+in\s+)?canada\b", re.IGNORECASE),
+    re.compile(
+        rf"\banywhere\s+(?:within|in|across)\s+{_CANADA_REGION_PATTERN}\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"\bwork(?:ing)?\s+from\s+(?:anywhere\s+(?:in|within)\s+)?"
+        rf"{_CANADA_REGION_PATTERN}\b",
+        re.IGNORECASE,
+    ),
     re.compile(r"\bcanada[- ]wide\b", re.IGNORECASE),
     # Eligibility language, not a mere team or customer mention.
     re.compile(
         r"\bopen\s+to\s+(?:applicants|candidates|anyone|people)\b"
-        r".{0,80}\b(?:canada|canadian|ontario)\b",
+        rf".{{0,80}}\b{_CANADA_REGION_PATTERN}\b",
         re.IGNORECASE | re.DOTALL,
     ),
     re.compile(
-        r"\b(?:hiring|recruiting)\b.{0,40}\b(?:in|across|within)\s+"
-        r"(?:canada|canadian|ontario)\b",
+        rf"\b(?:hiring|recruiting)\b.{{0,40}}\b(?:in|across|within)\s+"
+        rf"{_CANADA_REGION_PATTERN}\b",
         re.IGNORECASE | re.DOTALL,
     ),
     re.compile(
         r"\b(?:must|required)\s+(?:be\s+)?(?:reside|live|be\s+located)\s+in\s+"
-        r"(?:canada|canadian|ontario)\b",
+        rf"(?:(?:the\s+)?(?:province|territory)\s+of\s+)?"
+        rf"{_CANADA_REGION_PATTERN}\b",
         re.IGNORECASE,
     ),
     re.compile(
         r"\b(?:authori[sz]ed|eligible)\s+to\s+work\s+in\s+"
-        r"(?:canada|canadian|ontario)\b",
+        rf"(?:(?:the\s+)?(?:province|territory)\s+of\s+)?"
+        rf"{_CANADA_REGION_PATTERN}\b",
         re.IGNORECASE,
+    ),
+    re.compile(
+        rf"\b(?:open|available)\s+to\b.{{0,80}}\b"
+        rf"{_CANADA_REGION_PATTERN}\b.{{0,30}}\b"
+        r"(?:applicants|candidates|people|residents|workers)\b",
+        re.IGNORECASE | re.DOTALL,
     ),
 )
 
@@ -95,6 +136,14 @@ _EUROPE_UK_ONLY_RE = re.compile(
 _WORLDWIDE_RE = re.compile(r"\b(?:worldwide|anywhere\s+in\s+the\s+world|global(?:ly)?)\b", re.IGNORECASE)
 _NON_OTTAWA_EXPLICIT_RE = re.compile(
     r"\b(?:toronto|vancouver|montreal|calgary|edmonton|winnipeg|halifax)\b",
+    re.IGNORECASE,
+)
+_NON_CANADA_COUNTRY_RE = re.compile(
+    r"\b(?:"
+    r"united\s+states|u\.?s\.?a?|usa|united\s+kingdom|u\.?k\.?|"
+    r"ireland|india|australia|germany|france|spain|portugal|poland|"
+    r"brazil|mexico|argentina|nigeria|kenya|south\s+africa"
+    r")\b",
     re.IGNORECASE,
 )
 
@@ -143,6 +192,28 @@ def infer_workplace_type(
         if _REMOTE_RE.search(text):
             return WorkplaceType.REMOTE
     return WorkplaceType.UNKNOWN
+
+
+def location_may_be_relevant(location: str | None) -> bool:
+    """Return whether a summary location needs full content inspection.
+
+    Missing, remote, or worldwide-only locations remain relevant because the
+    description may establish Canadian eligibility. Clearly non-Canadian
+    locations are excluded without downloading descriptions.
+    """
+
+    location_text = plain_text(location)
+    if not location_text:
+        return True
+    if _OTTAWA_RE.search(location_text) or _CANADA_LOCATION_RE.search(location_text):
+        return True
+    if _ONTARIO_CITY_RE.search(location_text):
+        return True
+    if _NON_CANADA_COUNTRY_RE.search(location_text):
+        return False
+    if _CANADA_CITY_RE.search(location_text):
+        return True
+    return bool(_REMOTE_RE.search(location_text) or _WORLDWIDE_RE.search(location_text))
 
 
 def classify_location(
@@ -195,8 +266,22 @@ def classify_location(
 
     explicit_canada_remote = any(pattern.search(combined) for pattern in _CANADA_REMOTE_PATTERNS)
     remote_context = mode is WorkplaceType.REMOTE or bool(_REMOTE_RE.search(combined))
+    canada_location = _CANADA_LOCATION_RE.search(location_text)
+    ontario_city = _ONTARIO_CITY_RE.search(location_text)
+    canada_city = _CANADA_CITY_RE.search(location_text)
+    foreign_country = _NON_CANADA_COUNTRY_RE.search(location_text)
+    location_evidence = bool(
+        canada_location
+        or ontario_city
+        or (canada_city and not foreign_country)
+    )
 
-    if canada_remote_eligibility is False and remote_context:
+    if (
+        canada_remote_eligibility is False
+        and remote_context
+        and not location_evidence
+        and not explicit_canada_remote
+    ):
         return LocationDecision(
             LocationMatch.REJECTED,
             mode,
@@ -221,19 +306,19 @@ def classify_location(
             "europe_or_uk_only_remote",
         )
 
-    # A location list such as "Remote; EMEA; Canada" is a structured
-    # Canada-remote location. This uses only the location field, so an
-    # incidental "US & Canada team" sentence cannot trigger it.
-    if (
-        mode is WorkplaceType.REMOTE
-        and _REMOTE_RE.search(location_text)
-        and _CANADA_LOCATION_RE.search(location_text)
-    ):
+    # A remote role with Canada/Ontario or an Ontario city in its structured
+    # location field qualifies even when remote work was established through the
+    # description or structured workplace type rather than the location text.
+    if mode is WorkplaceType.REMOTE and location_evidence:
         return LocationDecision(
             LocationMatch.CONFIRMED,
             WorkplaceType.REMOTE,
             True,
-            "canada_remote_explicit",
+            (
+                "canada_remote_explicit"
+                if canada_location
+                else "ontario_remote_explicit" if ontario_city else "canada_remote_city"
+            ),
         )
 
     if explicit_canada_remote and remote_context:

@@ -14,7 +14,7 @@ from typing import Final
 
 
 UTC: Final = timezone.utc
-REMOVED_PROVIDERS: Final = frozenset({"smartrecruiters"})
+REMOVED_PROVIDERS: Final[frozenset[str]] = frozenset()
 
 
 def utc_now() -> datetime:

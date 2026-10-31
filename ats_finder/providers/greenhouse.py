@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from ats_finder.config import Settings
+from ats_finder.filters import location_may_be_relevant
 from ats_finder.models import (
     ATSSource,
     NormalizedJob,
@@ -125,7 +126,7 @@ class GreenhouseAdapter:
     ) -> FetchResult:
         token = self._board_token(source)
         base = f"https://boards-api.greenhouse.io/v1/boards/{token}"
-        response = await client.get(f"{base}/jobs", params={"content": "true"})
+        response = await client.get(f"{base}/jobs")
         request_count = 1
         try:
             payload: Any = response.json()
@@ -137,6 +138,69 @@ class GreenhouseAdapter:
         meta = payload.get("meta")
         if not isinstance(meta, dict) or not isinstance(meta.get("total"), int):
             raise ProviderParseError("Greenhouse response has no integer meta.total completeness marker")
+        if meta["total"] != len(raw_jobs):
+            raise ProviderParseError(
+                f"Greenhouse returned {len(raw_jobs)} jobs but meta.total is {meta['total']}"
+            )
+
+        summary_jobs: list[NormalizedJob] = []
+        summary_ids: set[str] = set()
+        prospect_count = 0
+        for raw in raw_jobs:
+            if isinstance(raw, dict) and raw.get("internal_job_id", object()) is None:
+                prospect_count += 1
+                continue
+            summary_job = parse_greenhouse_job(
+                raw, fallback_company=source.company
+            )
+            if summary_job.provider_job_id in summary_ids:
+                raise ProviderParseError(
+                    "Greenhouse returned duplicate job id "
+                    f"{summary_job.provider_job_id}"
+                )
+            summary_ids.add(summary_job.provider_job_id)
+            summary_jobs.append(summary_job)
+
+        provider_metadata = {
+            "reported_total": meta["total"],
+            "prospect_posts_excluded": prospect_count,
+        }
+        if not summary_jobs:
+            return FetchResult(
+                jobs=(),
+                request_count=request_count,
+                provider_metadata=provider_metadata,
+            )
+        if not any(
+            location_may_be_relevant(job.location) for job in summary_jobs
+        ):
+            return FetchResult(
+                jobs=(),
+                request_count=request_count,
+                location_filtered=True,
+                observed_record_count=len(summary_jobs),
+                provider_metadata=provider_metadata,
+            )
+
+        response = await client.get(
+            f"{base}/jobs",
+            params={"content": "true"},
+        )
+        request_count += 1
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise ProviderParseError(
+                "Greenhouse jobs response is not valid JSON"
+            ) from exc
+        if not isinstance(payload, dict) or not isinstance(payload.get("jobs"), list):
+            raise ProviderParseError("Greenhouse jobs response has no jobs array")
+        raw_jobs = payload["jobs"]
+        meta = payload.get("meta")
+        if not isinstance(meta, dict) or not isinstance(meta.get("total"), int):
+            raise ProviderParseError(
+                "Greenhouse response has no integer meta.total completeness marker"
+            )
         if meta["total"] != len(raw_jobs):
             raise ProviderParseError(
                 f"Greenhouse returned {len(raw_jobs)} jobs but meta.total is {meta['total']}"
@@ -195,6 +259,7 @@ class GreenhouseAdapter:
             provider_metadata={
                 "reported_total": meta["total"],
                 "prospect_posts_excluded": prospect_count,
+                "location_preflight_requests": 1,
             },
         )
 

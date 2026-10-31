@@ -3,7 +3,13 @@ from __future__ import annotations
 from typing import Any
 
 from ats_finder.config import Settings
-from ats_finder.models import ATSSource, NormalizedJob, WorkplaceType
+from ats_finder.filters import classify_location
+from ats_finder.models import (
+    ATSSource,
+    LocationMatch,
+    NormalizedJob,
+    WorkplaceType,
+)
 from ats_finder.providers.base import (
     FetchResult,
     PaginationError,
@@ -178,6 +184,24 @@ class LeverAdapter:
         jobs = tuple(
             parse_lever_job(item, fallback_company=source.company) for item in raw_jobs
         )
+        if jobs and not any(
+            not job.location.strip()
+            or classify_location(
+                job.location,
+                "",
+                job.workplace_type,
+                job.canada_remote_eligibility,
+            ).match
+            is not LocationMatch.REJECTED
+            for job in jobs
+        ):
+            return FetchResult(
+                jobs=(),
+                request_count=request_count,
+                location_filtered=True,
+                observed_record_count=len(jobs),
+                provider_metadata={"pages": request_count},
+            )
         return FetchResult(
             jobs=jobs,
             request_count=request_count,

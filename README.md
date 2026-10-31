@@ -5,10 +5,11 @@ Ottawa area or explicitly remote-eligible from Canada. It monitors official
 public ATS boards, stores complete snapshots in SQLite, and keeps verified
 publication time separate from first observation time.
 
-The application supports Greenhouse, Lever, Ashby, and Workable. Every other
-imported ATS remains visible as `UNSUPPORTED`; it is not silently dropped or
-presented as covered. See [ATS support](docs/ATS_SUPPORT.md) for
-provider-specific evidence and completeness rules.
+The application supports Greenhouse, Lever, Ashby, SmartRecruiters, and
+Workable. Every other imported ATS remains visible as `UNSUPPORTED`; it is not
+silently dropped or presented as covered. See
+[ATS support](docs/ATS_SUPPORT.md) for provider-specific evidence and
+completeness rules.
 
 ## What counts as a recent result
 
@@ -19,8 +20,10 @@ A job enters the main results only when all four conditions hold:
 2. The title does not contain `Staff`, `Principle`, `Principal`, `Manager`, or
    `Architect` as a standalone, case-insensitive word.
 3. The role is in Ottawa, Kanata, or Stittsville, or the public posting or
-   structured ATS data explicitly establishes remote eligibility from Canada.
-   Ambiguous remote roles become `REVIEW_LOCATION` and are excluded.
+   structured ATS data establishes remote eligibility from Canada or Ontario.
+   Remote Canada matching includes Canadian provinces and high-confidence
+   Canadian cities; ambiguous remote roles remain `REVIEW_LOCATION` and are
+   excluded.
 4. One of these independent qualification paths applies:
 
    - `VERIFIED_RECENT`: a documented ATS publication or republication timestamp
@@ -267,6 +270,14 @@ latency, rate limits, retries, and configured concurrency.
 - A complete snapshot with active jobs but no Canadian location is marked
   `canada_presence=NONE` and deferred for 30 days. Empty boards keep the normal
   interval so a newly populated board is still discovered promptly.
+- Greenhouse, SmartRecruiters, and Workable use location-bearing summary
+  requests before downloading job descriptions. Boards with no potentially
+  Canadian or Ottawa location are recorded as successful location-filtered
+  snapshots, previous target jobs are removed from public results, and the board
+  receives the no-target recheck. SmartRecruiters requests details only for
+  candidate postings. Missing, generic-remote, or ambiguous locations still
+  trigger content inspection to avoid missing Canada-eligible roles described
+  outside the location field.
 - SQLite selects only due supported boards and ranks them by configured
   priority, confirmed or unknown Canadian presence, and unbounded overdue age.
 - Each scan decision is stored once. Job content is normalized into immutable

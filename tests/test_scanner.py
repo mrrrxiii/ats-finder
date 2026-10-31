@@ -49,6 +49,19 @@ class _MissingBoardAdapter:
         )
 
 
+class _LocationFilteredAdapter:
+    provider = "greenhouse"
+
+    async def fetch(self, source, client, settings) -> FetchResult:
+        del source, client, settings
+        return FetchResult(
+            jobs=(),
+            request_count=1,
+            location_filtered=True,
+            observed_record_count=1,
+        )
+
+
 def test_scan_attempt_returns_freshly_persisted_source_state(
     harness: EngineHarness,
     job_factory: Callable[..., NormalizedJob],
@@ -72,6 +85,36 @@ def test_scan_attempt_returns_freshly_persisted_source_state(
     assert attempt.source.last_successful_scan_at == FIXED_NOW
     assert attempt.source.last_attempted_scan_at == FIXED_NOW
     assert attempt.source.consecutive_failures == 0
+
+
+def test_scan_source_records_location_filtered_snapshot(
+    harness: EngineHarness,
+    job_factory,
+    monkeypatch,
+) -> None:
+    harness.engine.process_complete_scan(
+        harness.source.id,
+        [job_factory("job-1")],
+        completed_at=FIXED_NOW,
+    )
+    monkeypatch.setitem(ADAPTERS, "greenhouse", _LocationFilteredAdapter())
+    later = FIXED_NOW + timedelta(hours=1)
+
+    async def scan():
+        scanner = BoardScanner(
+            harness.database,
+            Settings(per_host_interval_seconds=0),
+            client=object(),
+            now=lambda: later,
+        )
+        return await scanner.scan_source(harness.source.id)
+
+    attempt = asyncio.run(scan())
+
+    assert attempt.outcome.status.value == "SUCCESS"
+    assert attempt.outcome.removed == ("job-1",)
+    assert attempt.source.canada_presence.value == "NONE"
+    assert attempt.source.next_scan_at == later + harness.engine.policy.no_canada_recheck
 
 
 def test_missing_board_gets_a_low_cost_recovery_check(
@@ -163,10 +206,15 @@ def test_scan_due_skips_a_source_excluded_after_selection(
 
 def test_scan_source_refuses_a_removed_provider(
     harness: EngineHarness,
+    monkeypatch,
 ) -> None:
+    monkeypatch.setattr(
+        "ats_finder.scanner.REMOVED_PROVIDERS",
+        frozenset({"removed-test"}),
+    )
     with harness.database.transaction() as connection:
         connection.execute(
-            "UPDATE ats_sources SET provider = 'smartrecruiters' WHERE id = ?",
+            "UPDATE ats_sources SET provider = 'removed-test' WHERE id = ?",
             (harness.source.id,),
         )
 

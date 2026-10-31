@@ -5,8 +5,10 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 
 from ats_finder.config import Settings
+from ats_finder.filters import classify_location
 from ats_finder.models import (
     ATSSource,
+    LocationMatch,
     NormalizedJob,
     PublicationSemantics,
     WorkplaceType,
@@ -197,6 +199,28 @@ class AshbyAdapter:
                 raise ProviderParseError(f"Ashby returned duplicate job id {job.provider_job_id}")
             seen_ids.add(job.provider_job_id)
             jobs.append(job)
+
+        if jobs and not any(
+            not job.location.strip()
+            or classify_location(
+                job.location,
+                "",
+                job.workplace_type,
+                job.canada_remote_eligibility,
+            ).match
+            is not LocationMatch.REJECTED
+            for job in jobs
+        ):
+            return FetchResult(
+                jobs=(),
+                request_count=1,
+                location_filtered=True,
+                observed_record_count=len(jobs),
+                provider_metadata={
+                    "api_version": "1",
+                    "unlisted_excluded": unlisted_count,
+                },
+            )
 
         return FetchResult(
             jobs=tuple(jobs),

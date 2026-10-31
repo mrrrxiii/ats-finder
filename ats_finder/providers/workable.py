@@ -6,7 +6,13 @@ from typing import Any
 from urllib.parse import quote
 
 from ats_finder.config import Settings
-from ats_finder.models import ATSSource, NormalizedJob, WorkplaceType
+from ats_finder.filters import classify_location
+from ats_finder.models import (
+    ATSSource,
+    LocationMatch,
+    NormalizedJob,
+    WorkplaceType,
+)
 from ats_finder.providers.base import FetchResult, ProviderParseError, RespectfulAsyncClient
 from ats_finder.providers.text import html_to_text
 
@@ -158,7 +164,7 @@ class WorkableAdapter:
         response = await client.get(
             "https://apply.workable.com/api/v1/widget/accounts/"
             f"{quote(subdomain, safe='')}",
-            params={"details": "true"},
+            params=None,
             headers={"Accept": "application/json"},
             min_interval=settings.workable_request_interval_seconds,
         )
@@ -173,6 +179,68 @@ class WorkableAdapter:
         if not isinstance(account_name, str):
             raise ProviderParseError("Workable response has no string account name")
         company = account_name.strip() or source.company
+        raw_jobs = payload.get("jobs")
+        if not isinstance(raw_jobs, list):
+            raise ProviderParseError("Workable response has no jobs array")
+
+        if not raw_jobs:
+            return FetchResult(
+                jobs=(),
+                request_count=1,
+                provider_metadata={"reported_total": 0},
+            )
+
+        locations: list[tuple[str, WorkplaceType, bool | None]] = []
+        for raw in raw_jobs:
+            if not isinstance(raw, dict):
+                raise ProviderParseError(
+                    "Workable jobs array contains a non-object entry"
+                )
+            _required_string(raw, "shortcode")
+            _required_string(raw, "title")
+            _required_string(raw, "url")
+            _validate_published_on(raw.get("published_on"))
+            workplace = _workplace(raw)
+            location, country = _location(raw)
+            eligibility: bool | None = None
+            if workplace in {WorkplaceType.REMOTE, WorkplaceType.HYBRID} and country:
+                eligibility = country.casefold() in {"ca", "can", "canada"}
+            locations.append((location, workplace, eligibility))
+
+        has_candidate = any(
+            not location.strip()
+            or classify_location(
+                location,
+                "",
+                workplace,
+                eligibility,
+            ).match
+            is not LocationMatch.REJECTED
+            for location, workplace, eligibility in locations
+        )
+        if not has_candidate:
+            return FetchResult(
+                jobs=(),
+                request_count=1,
+                location_filtered=True,
+                observed_record_count=len(raw_jobs),
+                provider_metadata={"reported_total": len(raw_jobs)},
+            )
+
+        response = await client.get(
+            "https://apply.workable.com/api/v1/widget/accounts/"
+            f"{quote(subdomain, safe='')}",
+            params={"details": "true"},
+            headers={"Accept": "application/json"},
+            min_interval=settings.workable_request_interval_seconds,
+        )
+        request_count = 2
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise ProviderParseError("Workable response is not valid JSON") from exc
+        if not isinstance(payload, dict):
+            raise ProviderParseError("Workable response is not an object")
         raw_jobs = payload.get("jobs")
         if not isinstance(raw_jobs, list):
             raise ProviderParseError("Workable response has no jobs array")
@@ -193,9 +261,10 @@ class WorkableAdapter:
 
         return FetchResult(
             jobs=tuple(jobs),
-            request_count=1,
+            request_count=request_count,
             provider_metadata={
                 "reported_total": len(raw_jobs),
                 "day_only_publication_dates_ignored": day_only_dates,
+                "location_preflight_requests": 1,
             },
         )

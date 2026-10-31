@@ -68,6 +68,15 @@ def test_additional_verified_provider_urls_extract_stable_board_identifiers() ->
     assert workable.board_identifier == "acme-canada"
     assert workable.support_status == "supported"
 
+    smartrecruiters = source_candidate(
+        "https://jobs.smartrecruiters.com/ExampleCo",
+        "SmartRecruiters",
+    )
+
+    assert smartrecruiters.provider == "smartrecruiters"
+    assert smartrecruiters.board_identifier == "ExampleCo"
+    assert smartrecruiters.support_status == "supported"
+
 
 def test_import_payload_persists_deduplicated_sources_and_provenance(
     tmp_path: Path,
@@ -188,7 +197,7 @@ https://boards.greenhouse.io/acme,Greenhouse
         database.close()
 
 
-def test_import_payload_skips_removed_providers(tmp_path: Path) -> None:
+def test_import_payload_stores_smartrecruiters_sources(tmp_path: Path) -> None:
     content = """canonical_url,ats_platform
 https://boards.greenhouse.io/acme,Greenhouse
 https://jobs.smartrecruiters.com/AcmeCanada,SmartRecruiters
@@ -200,23 +209,24 @@ https://jobs.smartrecruiters.com/AcmeCanada,SmartRecruiters
         revision="fixture-commit-sha",
         sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
     )
-    database = Database(tmp_path / "removed.sqlite3")
+    database = Database(tmp_path / "smartrecruiters.sqlite3")
     try:
         report = import_payload(database, payload, imported_at=FIXED_NOW)
 
         assert report.unique_sources == 2
-        assert report.supported_sources == 1
-        assert report.removed_sources == 1
+        assert report.supported_sources == 2
+        assert report.removed_sources == 0
         assert report.excluded_sources == 0
-        assert [source.provider for source in database.list_sources()] == [
-            "greenhouse"
-        ]
+        assert {source.provider for source in database.list_sources()} == {
+            "greenhouse",
+            "smartrecruiters",
+        }
         with database.read() as connection:
             stored = connection.execute(
                 "SELECT COUNT(*) FROM ats_sources "
                 "WHERE provider = 'smartrecruiters'"
             ).fetchone()[0]
-        assert stored == 0
+        assert stored == 1
     finally:
         database.close()
 

@@ -16,10 +16,17 @@ from ats_finder.models import (
     SourceSupportStatus,
     WorkplaceType,
 )
-from ats_finder.providers.ashby import parse_ashby_job
+from ats_finder.providers.ashby import AshbyAdapter, parse_ashby_job
 from ats_finder.providers.base import PaginationError, ProviderParseError
-from ats_finder.providers.greenhouse import parse_greenhouse_job
+from ats_finder.providers.greenhouse import (
+    GreenhouseAdapter,
+    parse_greenhouse_job,
+)
 from ats_finder.providers.lever import LeverAdapter, parse_lever_job
+from ats_finder.providers.smartrecruiters import (
+    SmartRecruitersAdapter,
+    parse_smartrecruiters_job,
+)
 from ats_finder.providers.workable import WorkableAdapter, parse_workable_job
 
 from conftest import FIXED_NOW, EngineHarness
@@ -94,6 +101,110 @@ class _JSONResponse:
 
     def json(self) -> object:
         return deepcopy(self._payload)
+
+
+class _GreenhouseClient:
+    def __init__(self, item: dict[str, object]) -> None:
+        self.item = item
+        self.calls: list[dict[str, str] | None] = []
+
+    async def get(
+        self,
+        url: str,
+        *,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> _JSONResponse:
+        assert url == "https://boards-api.greenhouse.io/v1/boards/acme/jobs"
+        assert headers is None
+        self.calls.append(params)
+        return _JSONResponse(
+            {"jobs": [self.item], "meta": {"total": 1}}
+        )
+
+
+class _AshbyClient:
+    def __init__(self, job: dict[str, object]) -> None:
+        self.payload = {"apiVersion": "1", "jobs": [job]}
+
+    async def get(
+        self,
+        url: str,
+        *,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> _JSONResponse:
+        assert url == "https://api.ashbyhq.com/posting-api/job-board/acme"
+        assert params == {"includeCompensation": "false"}
+        del headers
+        return _JSONResponse(self.payload)
+
+
+def test_greenhouse_uses_summary_preflight_before_content(
+    harness: EngineHarness,
+) -> None:
+    source = _provider_source(
+        harness, "greenhouse", "acme", "https://boards.greenhouse.io/acme"
+    )
+    client = _GreenhouseClient(_fixture("greenhouse_job.json"))
+
+    result = asyncio.run(
+        GreenhouseAdapter().fetch(source, client, Settings())
+    )
+
+    assert result.request_count == 2
+    assert len(result.jobs) == 1
+    assert client.calls == [None, {"content": "true"}]
+
+
+def test_greenhouse_skips_content_for_out_of_scope_locations(
+    harness: EngineHarness,
+) -> None:
+    source = _provider_source(
+        harness, "greenhouse", "acme", "https://boards.greenhouse.io/acme"
+    )
+    item = _fixture("greenhouse_job.json")
+    item["location"] = {"name": "Austin, TX, United States"}
+    item["offices"] = []
+    client = _GreenhouseClient(item)
+
+    result = asyncio.run(
+        GreenhouseAdapter().fetch(source, client, Settings())
+    )
+
+    assert result.request_count == 1
+    assert result.location_filtered is True
+    assert result.observed_record_count == 1
+    assert result.jobs == ()
+    assert client.calls == [None]
+
+
+def test_ashby_marks_out_of_scope_board_as_location_filtered(
+    harness: EngineHarness,
+) -> None:
+    source = _provider_source(
+        harness, "ashby", "acme", "https://jobs.ashbyhq.com/acme"
+    )
+    item = _fixture("ashby_job.json")
+    item["location"] = "Austin, Texas"
+    item["secondaryLocations"] = []
+    item["address"] = {
+        "postalAddress": {
+            "addressLocality": "Austin",
+            "addressRegion": "Texas",
+            "addressCountry": "USA",
+        }
+    }
+    item["workplaceType"] = "OnSite"
+
+    result = asyncio.run(
+        AshbyAdapter().fetch(source, _AshbyClient(item), Settings())
+    )
+
+    assert result.request_count == 1
+    assert result.location_filtered is True
+    assert result.observed_record_count == 1
+    assert result.jobs == ()
 
 
 class _LeverPagingClient:
@@ -194,6 +305,250 @@ def test_lever_adapter_rejects_unproven_completion_at_page_limit(
         asyncio.run(LeverAdapter().fetch(source, client, settings))
 
 
+def test_lever_marks_out_of_scope_board_as_location_filtered(
+    harness: EngineHarness,
+) -> None:
+    source = _lever_source(harness)
+    item = _lever_item("lever-1")
+    item["categories"] = {
+        "location": "Austin, Texas",
+        "allLocations": ["Austin, Texas"],
+    }
+    item["country"] = "US"
+    item["workplaceType"] = "on-site"
+    client = _LeverPagingClient({0: [item]})
+
+    result = asyncio.run(
+        LeverAdapter().fetch(
+            source,
+            client,
+            Settings(lever_page_size=2, max_pages=5),
+        )
+    )
+
+    assert result.request_count == 1
+    assert result.location_filtered is True
+    assert result.observed_record_count == 1
+    assert result.jobs == ()
+
+
+def _smart_summary(
+    posting_id: str,
+    *,
+    city: str,
+    country: str,
+    remote: bool,
+    hybrid: bool = False,
+) -> dict[str, object]:
+    return {
+        "id": posting_id,
+        "name": "Java Platform Engineer",
+        "releasedDate": "2026-10-27T14:30:00Z",
+        "location": {
+            "city": city,
+            "country": country,
+            "remote": remote,
+            "hybrid": hybrid,
+            "fullLocation": f"{city}, {country}",
+        },
+    }
+
+
+def _smart_detail(posting_id: str) -> dict[str, object]:
+    return {
+        "id": posting_id,
+        "name": "Java Platform Engineer",
+        "postingUrl": f"https://jobs.smartrecruiters.com/Acme/{posting_id}",
+        "applyUrl": (
+            f"https://jobs.smartrecruiters.com/Acme/{posting_id}/apply"
+        ),
+        "active": True,
+        "releasedDate": "2026-10-27T14:30:00Z",
+        "company": {"name": "Acme Canada"},
+        "location": {
+            "city": "Remote",
+            "region": "ON",
+            "country": "ca",
+            "remote": True,
+            "hybrid": False,
+            "fullLocation": "Remote, ON, Canada",
+        },
+        "jobAd": {
+            "sections": {
+                "jobDescription": {
+                    "title": "The role",
+                    "text": "<p>Build Java services.</p>",
+                },
+                "qualifications": {
+                    "title": "Qualifications",
+                    "text": "Java 17 experience",
+                },
+            }
+        },
+    }
+
+
+class _SmartClient:
+    def __init__(
+        self,
+        summaries: list[dict[str, object]],
+        *,
+        first_total: int | None = None,
+        second_total: int | None = None,
+    ) -> None:
+        self.summaries = summaries
+        self.first_total = first_total
+        self.second_total = second_total
+        self.calls: list[tuple[str, dict[str, Any] | None]] = []
+
+    async def get(
+        self,
+        url: str,
+        *,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> _JSONResponse:
+        del headers
+        self.calls.append((url, params))
+        if params is not None:
+            offset = int(params["offset"])
+            total = (
+                self.second_total
+                if self.second_total is not None and offset > 0
+                else self.first_total
+                if self.first_total is not None and offset == 0
+                else len(self.summaries)
+            )
+            return _JSONResponse(
+                {
+                    "limit": 100,
+                    "offset": offset,
+                    "totalFound": total,
+                    "content": self.summaries[offset : offset + 100],
+                }
+            )
+        posting_id = url.rsplit("/", 1)[-1]
+        return _JSONResponse(_smart_detail(posting_id))
+
+
+def test_smartrecruiters_parses_detail_and_uses_job_description_url() -> None:
+    job = parse_smartrecruiters_job(
+        _smart_detail("smart-1"), fallback_company="Fallback"
+    )
+
+    assert job.provider_job_id == "smart-1"
+    assert job.company == "Acme Canada"
+    assert job.workplace_type is WorkplaceType.REMOTE
+    assert job.canada_remote_eligibility is True
+    assert job.publication_semantics is PublicationSemantics.ATS_PUBLISHED_AT
+    assert job.publication_is_verified is True
+    assert "Build Java services" in job.description
+    assert job.application_url == (
+        "https://jobs.smartrecruiters.com/Acme/smart-1"
+    )
+
+
+def test_smartrecruiters_fetches_details_only_for_location_candidates(
+    harness: EngineHarness,
+) -> None:
+    source = _provider_source(
+        harness,
+        "smartrecruiters",
+        "Acme",
+        "https://jobs.smartrecruiters.com/Acme",
+    )
+    client = _SmartClient(
+        [
+            _smart_summary(
+                "smart-1", city="Toronto", country="ca", remote=True
+            ),
+            _smart_summary(
+                "smart-2", city="Austin", country="us", remote=False
+            ),
+        ]
+    )
+
+    result = asyncio.run(
+        SmartRecruitersAdapter().fetch(
+            source,
+            client,
+            Settings(max_pages=2),
+        )
+    )
+
+    assert [job.provider_job_id for job in result.jobs] == ["smart-1"]
+    assert result.request_count == 2
+    assert result.provider_metadata["detail_requests"] == 1
+    assert len(client.calls) == 2
+    assert client.calls[1][1] is None
+    assert client.calls[1][0].endswith("/smart-1")
+
+
+def test_smartrecruiters_skips_all_details_when_locations_are_out_of_scope(
+    harness: EngineHarness,
+) -> None:
+    source = _provider_source(
+        harness,
+        "smartrecruiters",
+        "Acme",
+        "https://jobs.smartrecruiters.com/Acme",
+    )
+    client = _SmartClient(
+        [
+            _smart_summary(
+                "smart-1", city="Austin", country="us", remote=False
+            ),
+            _smart_summary(
+                "smart-2", city="Berlin", country="de", remote=True
+            ),
+        ]
+    )
+
+    result = asyncio.run(
+        SmartRecruitersAdapter().fetch(
+            source,
+            client,
+            Settings(max_pages=2),
+        )
+    )
+
+    assert result.request_count == 1
+    assert result.location_filtered is True
+    assert result.observed_record_count == 2
+    assert result.jobs == ()
+    assert result.provider_metadata["detail_requests"] == 0
+    assert len(client.calls) == 1
+
+
+def test_smartrecruiters_rejects_changed_total_during_pagination(
+    harness: EngineHarness,
+) -> None:
+    source = _provider_source(
+        harness,
+        "smartrecruiters",
+        "Acme",
+        "https://jobs.smartrecruiters.com/Acme",
+    )
+    client = _SmartClient(
+        [
+            _smart_summary(
+                "smart-1", city="Toronto", country="ca", remote=True
+            )
+        ],
+        first_total=2,
+        second_total=3,
+    )
+
+    with pytest.raises(PaginationError, match="pagination stopped"):
+        asyncio.run(
+            SmartRecruitersAdapter().fetch(
+                source,
+                client,
+                Settings(max_pages=2),
+            )
+        )
+
+
 def _provider_source(
     harness: EngineHarness,
     provider: str,
@@ -238,6 +593,10 @@ def test_workable_validates_day_precision_but_does_not_invent_a_timestamp() -> N
 
 
 class _WorkableClient:
+    def __init__(self, jobs: list[object] | None = None) -> None:
+        self.jobs = jobs if jobs is not None else [_workable_item("ABC123")]
+        self.calls: list[dict[str, Any] | None] = []
+
     async def get(
         self,
         url: str,
@@ -247,11 +606,12 @@ class _WorkableClient:
         min_interval: float | None = None,
     ) -> _JSONResponse:
         assert url == "https://apply.workable.com/api/v1/widget/accounts/acme"
-        assert params == {"details": "true"}
         assert min_interval == 1.0
+        assert params in (None, {"details": "true"})
+        self.calls.append(params)
         del headers
         return _JSONResponse(
-            {"name": "Acme Canada", "jobs": [_workable_item("ABC123")]}
+            {"name": "Acme Canada", "jobs": self.jobs}
         )
 
 
@@ -261,11 +621,40 @@ def test_workable_adapter_certifies_single_response_snapshot(
     source = _provider_source(
         harness, "workable", "acme", "https://apply.workable.com/acme/"
     )
+    client = _WorkableClient()
     result = asyncio.run(
-        WorkableAdapter().fetch(source, _WorkableClient(), Settings())
+        WorkableAdapter().fetch(source, client, Settings())
+    )
+
+    assert result.request_count == 2
+    assert len(result.jobs) == 1
+    assert result.provider_metadata["day_only_publication_dates_ignored"] == 1
+    assert client.calls == [None, {"details": "true"}]
+
+
+def test_workable_skips_descriptions_when_all_locations_are_out_of_scope(
+    harness: EngineHarness,
+) -> None:
+    source = _provider_source(
+        harness, "workable", "acme", "https://apply.workable.com/acme/"
+    )
+    non_target = {
+        **_workable_item("US123"),
+        "city": "Austin",
+        "state": "Texas",
+        "country": "United States",
+        "workplace_type": "on_site",
+        "telecommuting": False,
+    }
+    client = _WorkableClient([non_target])
+
+    result = asyncio.run(
+        WorkableAdapter().fetch(source, client, Settings())
     )
 
     assert result.request_count == 1
-    assert len(result.jobs) == 1
-    assert result.provider_metadata["day_only_publication_dates_ignored"] == 1
+    assert result.location_filtered is True
+    assert result.observed_record_count == 1
+    assert result.jobs == ()
+    assert client.calls == [None]
 

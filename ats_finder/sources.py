@@ -7,12 +7,15 @@ from dataclasses import dataclass
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit, urlunsplit
 
 
-SUPPORTED_PROVIDERS = frozenset({"greenhouse", "lever", "ashby", "workable"})
+SUPPORTED_PROVIDERS = frozenset(
+    {"greenhouse", "lever", "ashby", "smartrecruiters", "workable"}
+)
 
 _PLATFORM_NAMES = {
     "greenhouse": "greenhouse",
     "lever": "lever",
     "ashby": "ashby",
+    "smartrecruiters": "smartrecruiters",
     "workday": "workday",
     "workable": "workable",
     "bamboohr": "bamboohr",
@@ -111,6 +114,11 @@ def _extract_supported_identity(provider: str, canonical_url: str) -> tuple[str,
             raise ValueError("Ashby URL has no job-board name")
         board = segments[0]
         return board, _humanize(board)
+
+    if provider == "smartrecruiters":
+        if not segments:
+            raise ValueError("SmartRecruiters URL has no company identifier")
+        return segments[0], _humanize(segments[0])
 
     if provider == "workable":
         if not segments:

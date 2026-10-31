@@ -239,6 +239,109 @@ class ScanEngine:
             next_scan_at=next_scan_at,
         )
 
+    def record_location_filtered_scan(
+        self,
+        source_id: int,
+        observed_record_count: int,
+        *,
+        started_at: datetime | None = None,
+        completed_at: datetime | None = None,
+    ) -> ScanOutcome:
+        """Record a complete board listing with no in-scope locations.
+
+        Provider summaries prove the board listing is complete, but none of the
+        listed locations can qualify for the current product. Full descriptions
+        were intentionally not downloaded. Existing target jobs are removed from
+        the active result set and the board receives the no-target recheck delay.
+        """
+
+        if observed_record_count < 0:
+            raise ValueError("observed_record_count must be non-negative")
+        completed = as_utc(completed_at) if completed_at is not None else utc_now()
+        started = as_utc(started_at) if started_at is not None else completed
+        if started > completed:
+            raise ValueError("started_at must not be later than completed_at")
+        removed_ids: list[str] = []
+        with self.database.transaction() as connection:
+            self._require_source(connection, source_id)
+            previous = self._previous_complete_scan(connection, source_id)
+            previous_id, previous_at, gap_seconds = self._comparison_details(
+                previous, completed
+            )
+            cursor = connection.execute(
+                """
+                INSERT INTO scan_runs (
+                    source_id, started_at, ended_at, completion_status,
+                    pagination_complete, record_count, error_information,
+                    previous_complete_scan_id, previous_complete_scan_at,
+                    snapshot_gap_seconds
+                ) VALUES (?, ?, ?, 'SUCCESS', 1, ?, NULL, ?, ?, ?)
+                """,
+                (
+                    source_id,
+                    datetime_to_storage(started),
+                    datetime_to_storage(completed),
+                    observed_record_count,
+                    previous_id,
+                    datetime_to_storage(previous_at),
+                    gap_seconds,
+                ),
+            )
+            scan_id = int(cursor.lastrowid)
+            active_jobs = connection.execute(
+                "SELECT * FROM jobs WHERE source_id = ? AND current_state = 'ACTIVE' ORDER BY id",
+                (source_id,),
+            ).fetchall()
+            for row in active_jobs:
+                removed_ids.append(row["provider_job_id"])
+                connection.execute(
+                    """
+                    UPDATE jobs
+                    SET current_state = 'REMOVED', removed_at = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        datetime_to_storage(completed),
+                        datetime_to_storage(completed),
+                        row["id"],
+                    ),
+                )
+                self._insert_removed_observation(
+                    connection,
+                    scan_id=scan_id,
+                    previous_scan_id=previous_id,
+                    previous_scan_at=previous_at,
+                    gap_seconds=gap_seconds,
+                    timestamp=completed,
+                    row=row,
+                )
+            connection.execute(
+                """
+                UPDATE ats_sources
+                SET last_successful_scan_at = ?, last_attempted_scan_at = ?,
+                    last_scan_result = 'SUCCESS', consecutive_failures = 0,
+                    canada_presence = 'NONE', next_scan_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    datetime_to_storage(completed),
+                    datetime_to_storage(completed),
+                    datetime_to_storage(completed + self.policy.no_canada_recheck),
+                    datetime_to_storage(completed),
+                    source_id,
+                ),
+            )
+        return ScanOutcome(
+            scan_id=scan_id,
+            source_id=source_id,
+            status=ScanStatus.SUCCESS,
+            previous_complete_scan_id=previous_id,
+            previous_complete_scan_at=previous_at,
+            snapshot_gap=None if gap_seconds is None else timedelta(seconds=gap_seconds),
+            record_count=observed_record_count,
+            removed=tuple(removed_ids),
+        )
+
     def set_application_status(
         self,
         job_id: int,

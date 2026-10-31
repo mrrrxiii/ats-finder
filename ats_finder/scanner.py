@@ -135,7 +135,14 @@ class BoardScanner:
                 request_count = result.request_count
                 warnings = result.warnings
                 completed_at = self._now().astimezone(timezone.utc)
-                if not result.complete:
+                if result.location_filtered:
+                    outcome = self.engine.record_location_filtered_scan(
+                        source.id,
+                        observed_record_count=result.observed_record_count or 0,
+                        started_at=started_at,
+                        completed_at=completed_at,
+                    )
+                elif not result.complete:
                     outcome = self.engine.record_incomplete_scan(
                         source.id,
                         "Provider adapter did not certify complete pagination",

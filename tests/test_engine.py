@@ -457,6 +457,47 @@ def test_failed_scan_does_not_replace_the_last_complete_snapshot(
     assert source.last_successful_scan_at == completed_at
 
 
+def test_location_filtered_scan_removes_previous_target_jobs_from_results(
+    harness: EngineHarness,
+    job_factory: JobFactory,
+) -> None:
+    harness.engine.process_complete_scan(
+        harness.source.id,
+        [
+            job_factory("job-1"),
+            job_factory("job-2", title="Java Platform Engineer"),
+        ],
+        completed_at=FIXED_NOW,
+    )
+    completed_at = FIXED_NOW + timedelta(hours=1)
+
+    outcome = harness.engine.record_location_filtered_scan(
+        harness.source.id,
+        2,
+        started_at=completed_at,
+        completed_at=completed_at,
+    )
+
+    assert outcome.status is ScanStatus.SUCCESS
+    assert set(outcome.removed) == {"job-1", "job-2"}
+    assert outcome.record_count == 2
+    assert {
+        job.current_state
+        for job in harness.database.list_jobs(source_id=harness.source.id)
+    } == {JobState.REMOVED}
+    observations = harness.database.list_observations(scan_id=outcome.scan_id)
+    assert len(observations) == 2
+    assert {item.observation_status for item in observations} == {
+        ObservationStatus.REMOVED
+    }
+    source = harness.database.get_source(harness.source.id)
+    assert source is not None
+    assert source.canada_presence is CanadaPresence.NONE
+    assert source.consecutive_failures == 0
+    assert source.next_scan_at == completed_at + harness.engine.policy.no_canada_recheck
+    assert harness.engine.recent_jobs(now=completed_at) == []
+
+
 def test_incomplete_scan_does_not_replace_the_last_complete_snapshot(
     harness: EngineHarness,
     job_factory: JobFactory,
@@ -887,6 +928,8 @@ def test_ottawa_area_locations_are_eligible(
         "Remote - Canada",
         "Canada (Remote)",
         "Remote Ontario",
+        "Remote - Toronto",
+        "Remote within the province of Ontario",
     ],
 )
 def test_explicit_canada_remote_locations_are_eligible(location: str) -> None:
@@ -894,7 +937,35 @@ def test_explicit_canada_remote_locations_are_eligible(location: str) -> None:
     assert decision.match is LocationMatch.CONFIRMED
     assert decision.workplace_type is WorkplaceType.REMOTE
     assert decision.canada_remote_eligibility is True
-    assert decision.reason == "canada_remote_explicit"
+    assert decision.reason in {
+        "canada_remote_explicit",
+        "ontario_remote_explicit",
+    }
+
+
+@pytest.mark.parametrize(
+    ("location", "description", "expected_reason"),
+    [
+        ("Ontario", "This role is fully remote.", "canada_remote_explicit"),
+        ("Toronto", "This role is fully remote.", "ontario_remote_explicit"),
+        ("Toronto", "We work remotely across the company.", "ontario_remote_explicit"),
+    ],
+)
+def test_remote_work_in_location_field_qualifies_in_ontario(
+    location: str,
+    description: str,
+    expected_reason: str,
+) -> None:
+    decision = classify_location(
+        location,
+        description,
+        WorkplaceType.UNKNOWN,
+    )
+
+    assert decision.match is LocationMatch.CONFIRMED
+    assert decision.workplace_type is WorkplaceType.REMOTE
+    assert decision.canada_remote_eligibility is True
+    assert decision.reason == expected_reason
 
 
 def test_incidental_canada_team_mention_does_not_confirm_argentina_remote() -> None:
@@ -976,6 +1047,41 @@ def test_structured_canada_remote_eligibility_is_accepted() -> None:
 
 
 @pytest.mark.parametrize(
+    "location",
+    [
+        "US / Canada",
+        "Remote - US & Canada; United States",
+        "United States - Remote; Canada - Remote",
+        "United States; Canada",
+        "United States; Ontario",
+        "Toronto/North America (Remote); United States",
+    ],
+)
+def test_explicit_canadian_location_overrides_primary_country_flag(
+    location: str,
+) -> None:
+    decision = classify_location(
+        location,
+        workplace_type=WorkplaceType.REMOTE,
+        canada_remote_eligibility=False,
+    )
+
+    assert decision.match is LocationMatch.CONFIRMED
+    assert decision.canada_remote_eligibility is True
+
+
+def test_primary_country_flag_still_rejects_non_canadian_location() -> None:
+    decision = classify_location(
+        "United States",
+        workplace_type=WorkplaceType.REMOTE,
+        canada_remote_eligibility=False,
+    )
+
+    assert decision.match is LocationMatch.REJECTED
+    assert decision.reason == "structured_canada_remote_ineligible"
+
+
+@pytest.mark.parametrize(
     ("location", "description"),
     [
         ("Remote - United States only", "",),
@@ -1007,6 +1113,67 @@ def test_non_ottawa_hybrid_is_not_overridden_by_remote_boilerplate() -> None:
 
     assert decision.match is LocationMatch.REJECTED
     assert decision.workplace_type is WorkplaceType.HYBRID
+    assert decision.reason == "non_ottawa_hybrid_or_onsite"
+
+
+def test_remote_outside_ontario_remains_ambiguous() -> None:
+    decision = classify_location(
+        "Remote - Paris",
+        workplace_type=WorkplaceType.REMOTE,
+    )
+
+    assert decision.match is LocationMatch.REVIEW_LOCATION
+    assert decision.reason == "remote_eligibility_ambiguous"
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "Vancouver",
+        "Montreal",
+        "Calgary",
+        "Remote - British Columbia",
+    ],
+)
+def test_remote_in_canada_is_confirmed(
+    location: str,
+) -> None:
+    decision = classify_location(
+        location,
+        workplace_type=WorkplaceType.REMOTE,
+    )
+
+    assert decision.match is LocationMatch.CONFIRMED
+    assert decision.canada_remote_eligibility is True
+
+
+def test_ambiguous_city_name_in_us_location_is_not_treated_as_ontario() -> None:
+    decision = classify_location(
+        "San Francisco; Brooklyn; Cambridge; Remote; United States",
+        workplace_type=WorkplaceType.REMOTE,
+    )
+
+    assert decision.match is LocationMatch.REVIEW_LOCATION
+    assert decision.reason == "remote_eligibility_ambiguous"
+
+
+def test_canadian_city_in_us_location_is_not_treated_as_canada_remote() -> None:
+    decision = classify_location(
+        "Vancouver, WA, United States",
+        workplace_type=WorkplaceType.REMOTE,
+    )
+
+    assert decision.match is LocationMatch.REVIEW_LOCATION
+    assert decision.reason == "remote_eligibility_ambiguous"
+
+
+def test_toronto_onsite_role_is_not_mistaken_for_remote_ontario() -> None:
+    decision = classify_location(
+        "Toronto, Ontario",
+        workplace_type=WorkplaceType.ONSITE,
+    )
+
+    assert decision.match is LocationMatch.REJECTED
     assert decision.reason == "non_ottawa_hybrid_or_onsite"
 
 
